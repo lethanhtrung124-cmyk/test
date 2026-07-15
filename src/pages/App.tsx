@@ -1,12 +1,13 @@
 import {
   Activity,
   Archive,
+  Briefcase,
   Bug,
   CheckCircle2,
   Database,
   FileCheck2,
   GitBranch,
-  LockKeyhole,
+  ListChecks,
   PlayCircle,
   ShieldCheck
 } from 'lucide-react';
@@ -21,7 +22,7 @@ import {
   defects as initialDefects,
   environments,
   evidence,
-  projects,
+  projects as initialProjects,
   scenarios as initialScenarios,
   testCases as initialTestCases,
   testResults as initialTestResults,
@@ -30,45 +31,53 @@ import {
 } from '../services/mockData';
 import { calculateMetrics, statusTone } from '../services/metrics';
 import { dataMode } from '../services/supabaseClient';
-import type { AuditLog, Defect, Evidence, ResultStatus, TestCase, TestResult, TestRun, TestScenario, UseCase } from '../types/domain';
+import type { AuditLog, Defect, Evidence, Project, ResultStatus, TestCase, TestResult, TestRun, TestScenario, UseCase } from '../types/domain';
 
-type Tab = 'dashboard' | 'rtm' | 'runs' | 'defects' | 'evidence' | 'entry';
+type Tab = 'overview' | 'rtm' | 'runs' | 'defects' | 'evidence' | 'entry';
 
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'dashboard', label: 'Bảng điều khiển' },
+  { id: 'overview', label: 'Dự án & phạm vi' },
   { id: 'rtm', label: 'Ma trận truy vết' },
-  { id: 'runs', label: 'Đợt kiểm thử' },
+  { id: 'runs', label: 'Kết quả kiểm thử' },
   { id: 'defects', label: 'Lỗi' },
   { id: 'evidence', label: 'Minh chứng & nhật ký' },
   { id: 'entry', label: 'Nhập dữ liệu' }
 ];
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [projectRows, setProjectRows] = useStoredState('uc-platform-projects', initialProjects);
   const [useCaseRows, setUseCaseRows] = useStoredState('uc-platform-use-cases', initialUseCases);
   const [scenarioRows, setScenarioRows] = useStoredState('uc-platform-scenarios', initialScenarios);
   const [testCaseRows, setTestCaseRows] = useStoredState('uc-platform-test-cases', initialTestCases);
-  const [testRunRows, setTestRunRows] = useStoredState('uc-platform-test-runs', initialTestRuns);
+  const [testRunRows, setTestRunRows] = useStoredState('uc-platform-test-runs', normalizeRuns(initialTestRuns, initialUseCases));
   const [resultRows, setResultRows] = useStoredState('uc-platform-test-results', initialTestResults);
   const [defectRows, setDefectRows] = useStoredState('uc-platform-defects', initialDefects);
   const [auditRows, setAuditRows] = useStoredState('uc-platform-audit-logs', initialAuditLogs);
+  const [selectedProjectId, setSelectedProjectId] = useStoredState('uc-platform-selected-project', projectRows[0]?.id ?? '');
+  const [selectedRunId, setSelectedRunId] = useStoredState('uc-platform-selected-run', testRunRows[0]?.id ?? '');
 
-  const metrics = useMemo(() => calculateMetrics(useCaseRows, testCaseRows, resultRows), [useCaseRows, testCaseRows, resultRows]);
-  const activeRun = testRunRows[0];
-  const activeProject = projects[0];
-  const environment = activeRun ? environments.find((item) => item.id === activeRun.environmentId) : environments[0];
-  const version = activeRun ? applicationVersions.find((item) => item.id === activeRun.applicationVersionId) : applicationVersions[0];
+  const selectedProject = projectRows.find((project) => project.id === selectedProjectId) ?? projectRows[0];
+  const projectRuns = testRunRows.filter((run) => run.projectId === selectedProject?.id);
+  const selectedRun = projectRuns.find((run) => run.id === selectedRunId) ?? projectRuns[0];
+  const projectUseCases = useCaseRows.filter((useCase) => useCase.projectId === selectedProject?.id);
+  const scopedUseCases = selectedRun ? projectUseCases.filter((useCase) => getRunUseCaseIds(selectedRun, projectUseCases).includes(useCase.id)) : projectUseCases;
+  const scopedTestCases = testCaseRows.filter((testCase) => testCase.useCaseIds.some((id) => scopedUseCases.some((useCase) => useCase.id === id)));
+  const scopedResults = resultRows.filter((result) => (!selectedRun || result.testRunId === selectedRun.id) && scopedTestCases.some((testCase) => testCase.id === result.testCaseId));
+  const scopedDefects = defectRows.filter((defect) => defect.projectId === selectedProject?.id);
+  const metrics = useMemo(() => calculateMetrics(scopedUseCases, scopedTestCases, scopedResults), [scopedUseCases, scopedTestCases, scopedResults]);
+  const environment = selectedRun ? environments.find((item) => item.id === selectedRun.environmentId) : environments[0];
+  const version = selectedRun ? applicationVersions.find((item) => item.id === selectedRun.applicationVersionId) : applicationVersions[0];
+
+  useEffect(() => {
+    if (selectedProject && !projectRuns.some((run) => run.id === selectedRunId)) {
+      setSelectedRunId(projectRuns[0]?.id ?? '');
+    }
+  }, [projectRuns, selectedProject, selectedRunId, setSelectedRunId]);
 
   function addAudit(action: string, entity: string, entityId: string) {
     setAuditRows((current) => [
-      {
-        id: createId('audit'),
-        actor: 'local-demo-user',
-        action,
-        entity,
-        entityId,
-        createdAt: new Date().toISOString()
-      },
+      { id: createId('audit'), actor: 'local-demo-user', action, entity, entityId, createdAt: new Date().toISOString() },
       ...current
     ]);
   }
@@ -80,7 +89,7 @@ export function App() {
           <ShieldCheck aria-hidden size={28} />
           <div>
             <strong>Nền tảng kiểm thử UC</strong>
-            <span>Bản nền v2.0.0</span>
+            <span>Quản lý theo dự án và đợt kiểm thử</span>
           </div>
         </div>
         <nav aria-label="Điều hướng chính">
@@ -93,34 +102,60 @@ export function App() {
         <div className="side-panel">
           <p>Nguồn dữ liệu</p>
           <strong>{dataMode === 'supabase' ? 'Supabase' : 'Dữ liệu trình duyệt'}</strong>
-          <span>Dữ liệu nhập hiện lưu trong localStorage cho bản demo</span>
+          <span>Mỗi đợt kiểm thử có phạm vi UC riêng</span>
         </div>
       </aside>
 
       <section className="content">
         <header className="topbar">
           <div>
-            <p>{activeProject.code}</p>
-            <h1>{activeProject.name}</h1>
+            <p>{selectedProject?.code ?? 'Chưa có dự án'}</p>
+            <h1>{selectedProject?.name ?? 'Tạo dự án mới để bắt đầu'}</h1>
           </div>
           <div className="run-summary">
-            <Badge tone="info">{environment?.code}</Badge>
-            <Badge tone="success">{version?.version}</Badge>
-            {activeRun && <Badge tone="warning">{runStatusLabel(activeRun.status)}</Badge>}
+            {environment && <Badge tone="info">{environment.code}</Badge>}
+            {version && <Badge tone="success">{version.version}</Badge>}
+            {selectedRun && <Badge tone="warning">{runStatusLabel(selectedRun.status)}</Badge>}
           </div>
         </header>
 
-        {activeTab === 'dashboard' && <Dashboard metrics={metrics} useCases={useCaseRows} testCases={testCaseRows} />}
-        {activeTab === 'rtm' && <RtmView useCases={useCaseRows} scenarios={scenarioRows} testCases={testCaseRows} results={resultRows} />}
-        {activeTab === 'runs' && <RunsView testCases={testCaseRows} results={resultRows} />}
-        {activeTab === 'defects' && <DefectsView defects={defectRows} />}
+        <SelectorBar
+          projects={projectRows}
+          runs={projectRuns}
+          selectedProjectId={selectedProject?.id ?? ''}
+          selectedRunId={selectedRun?.id ?? ''}
+          onProjectChange={setSelectedProjectId}
+          onRunChange={setSelectedRunId}
+        />
+
+        {activeTab === 'overview' && (
+          <OverviewView
+            project={selectedProject}
+            run={selectedRun}
+            useCases={scopedUseCases}
+            allProjectUseCases={projectUseCases}
+            testCases={scopedTestCases}
+            metrics={metrics}
+          />
+        )}
+        {activeTab === 'rtm' && <RtmView useCases={scopedUseCases} scenarios={scenarioRows} testCases={scopedTestCases} results={scopedResults} />}
+        {activeTab === 'runs' && <RunsView testCases={scopedTestCases} results={scopedResults} />}
+        {activeTab === 'defects' && <DefectsView defects={scopedDefects} />}
         {activeTab === 'evidence' && <EvidenceView auditLogs={auditRows} />}
         {activeTab === 'entry' && (
           <EntryView
-            useCases={useCaseRows}
-            testCases={testCaseRows}
-            testRuns={testRunRows}
-            results={resultRows}
+            selectedProject={selectedProject}
+            selectedRun={selectedRun}
+            projects={projectRows}
+            useCases={projectUseCases}
+            testCases={scopedTestCases}
+            testRuns={projectRuns}
+            results={scopedResults}
+            onAddProject={(row) => {
+              setProjectRows((current) => [row, ...current]);
+              setSelectedProjectId(row.id);
+              addAudit('CREATE_PROJECT', 'projects', row.id);
+            }}
             onAddUseCase={(row) => {
               setUseCaseRows((current) => [row, ...current]);
               addAudit('CREATE_USE_CASE', 'use_cases', row.id);
@@ -132,7 +167,12 @@ export function App() {
             }}
             onAddTestRun={(row) => {
               setTestRunRows((current) => [row, ...current]);
+              setSelectedRunId(row.id);
               addAudit('CREATE_TEST_RUN', 'test_runs', row.id);
+            }}
+            onUpdateRunScope={(runId, useCaseIds) => {
+              setTestRunRows((current) => current.map((run) => (run.id === runId ? { ...run, useCaseIds } : run)));
+              addAudit('UPDATE_TEST_RUN_SCOPE', 'test_runs', runId);
             }}
             onAddResult={(row) => {
               setResultRows((current) => [row, ...current]);
@@ -143,13 +183,16 @@ export function App() {
               addAudit('CREATE_DEFECT', 'defects', row.id);
             }}
             onReset={() => {
+              setProjectRows(initialProjects);
               setUseCaseRows(initialUseCases);
               setScenarioRows(initialScenarios);
               setTestCaseRows(initialTestCases);
-              setTestRunRows(initialTestRuns);
+              setTestRunRows(normalizeRuns(initialTestRuns, initialUseCases));
               setResultRows(initialTestResults);
               setDefectRows(initialDefects);
               setAuditRows(initialAuditLogs);
+              setSelectedProjectId(initialProjects[0]?.id ?? '');
+              setSelectedRunId(initialTestRuns[0]?.id ?? '');
             }}
           />
         )}
@@ -158,32 +201,98 @@ export function App() {
   );
 }
 
-function Dashboard({ metrics, useCases, testCases }: { metrics: ReturnType<typeof calculateMetrics>; useCases: UseCase[]; testCases: TestCase[] }) {
+function SelectorBar({ projects, runs, selectedProjectId, selectedRunId, onProjectChange, onRunChange }: {
+  projects: Project[];
+  runs: TestRun[];
+  selectedProjectId: string;
+  selectedRunId: string;
+  onProjectChange: (id: string) => void;
+  onRunChange: (id: string) => void;
+}) {
+  return (
+    <section className="selector-bar">
+      <label>
+        Dự án
+        <select value={selectedProjectId} onChange={(event) => onProjectChange(event.target.value)}>
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.code} - {project.name}</option>)}
+        </select>
+      </label>
+      <label>
+        Đợt kiểm thử
+        <select value={selectedRunId} onChange={(event) => onRunChange(event.target.value)}>
+          {runs.map((run) => <option key={run.id} value={run.id}>{run.code} - {run.suite}</option>)}
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function OverviewView({ project, run, useCases, allProjectUseCases, testCases, metrics }: {
+  project?: Project;
+  run?: TestRun;
+  useCases: UseCase[];
+  allProjectUseCases: UseCase[];
+  testCases: TestCase[];
+  metrics: ReturnType<typeof calculateMetrics>;
+}) {
   return (
     <div className="stack">
       <div className="metrics-grid">
-        <MetricCard label="Độ phủ UC" value={`${metrics.ucCoverage}%`} hint={`${useCases.length} UC, ${testCases.length} ca kiểm thử`} icon={<FileCheck2 size={22} />} />
-        <MetricCard label="Đã thực hiện" value={`${metrics.executedRate}%`} hint="Không tính trạng thái chưa chạy" icon={<PlayCircle size={22} />} />
-        <MetricCard label="Tỷ lệ đạt" value={`${metrics.passRate}%`} hint="Đạt trên kết quả đã thực hiện" icon={<CheckCircle2 size={22} />} />
-        <MetricCard label="Tự động hóa" value={`${metrics.automationRate}%`} hint="Ca kiểm thử đã có script duyệt" icon={<GitBranch size={22} />} />
+        <MetricCard label="UC trong đợt" value={`${useCases.length}`} hint={`${allProjectUseCases.length} UC của dự án`} icon={<ListChecks size={22} />} />
+        <MetricCard label="Ca kiểm thử" value={`${testCases.length}`} hint="Theo phạm vi UC đã chọn" icon={<FileCheck2 size={22} />} />
+        <MetricCard label="Độ phủ UC" value={`${metrics.ucCoverage}%`} hint="UC có ca kiểm thử liên kết" icon={<CheckCircle2 size={22} />} />
+        <MetricCard label="Tỷ lệ đạt" value={`${metrics.passRate}%`} hint="Trong đợt đang chọn" icon={<PlayCircle size={22} />} />
       </div>
 
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p>Tình trạng kết quả</p>
-            <h2>Thống kê toàn bộ dữ liệu hiện có</h2>
+            <p>Thông tin quản lý</p>
+            <h2>{project?.name ?? 'Chưa có dự án'}</h2>
+          </div>
+          <Briefcase aria-hidden />
+        </div>
+        <div className="management-grid">
+          <div>
+            <span>Mã dự án</span>
+            <strong>{project?.code}</strong>
+          </div>
+          <div>
+            <span>Đơn vị quản lý</span>
+            <strong>{project?.ownerUnit}</strong>
+          </div>
+          <div>
+            <span>Đợt kiểm thử</span>
+            <strong>{run?.code ?? 'Chưa có đợt kiểm thử'}</strong>
+          </div>
+          <div>
+            <span>Trạng thái đợt</span>
+            <strong>{run ? runStatusLabel(run.status) : '-'}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Phạm vi UC của đợt kiểm thử</p>
+            <h2>Danh sách UC sẽ được kiểm thử trong đợt này</h2>
           </div>
           <Activity aria-hidden />
         </div>
-        <div className="status-grid">
-          {Object.entries(metrics.statusCounts).map(([status, count]) => (
-            <div key={status} className="status-cell">
-              <span>{resultStatusLabel(status as ResultStatus)}</span>
-              <strong>{count}</strong>
-            </div>
-          ))}
-        </div>
+        <DataTable
+          columns={['Mã UC', 'Tên UC', 'Phân hệ', 'Phiên bản duyệt']}
+          rows={useCases}
+          renderRow={(useCase) => (
+            <tr key={useCase.id}>
+              <td><strong>{useCase.code}</strong></td>
+              <td>{useCase.title}</td>
+              <td>{useCase.module}</td>
+              <td>{useCase.approvedVersion}</td>
+            </tr>
+          )}
+          emptyText="Đợt kiểm thử này chưa chọn UC nào"
+        />
       </section>
     </div>
   );
@@ -195,7 +304,7 @@ function RtmView({ useCases, scenarios, testCases, results }: { useCases: UseCas
       <div className="panel-heading">
         <div>
           <p>Ma trận truy vết yêu cầu</p>
-          <h2>UC / Tình huống / Ca kiểm thử / Script / Kết quả</h2>
+          <h2>UC / Tình huống / Ca kiểm thử / Kết quả trong đợt</h2>
         </div>
         <FileCheck2 aria-hidden />
       </div>
@@ -203,7 +312,7 @@ function RtmView({ useCases, scenarios, testCases, results }: { useCases: UseCas
         columns={['UC', 'Tình huống', 'Ca kiểm thử', 'Tự động hóa', 'Kết quả mới nhất']}
         rows={testCases}
         renderRow={(testCase) => {
-          const useCaseCodes = testCase.useCaseIds.map((id) => useCases.find((item) => item.id === id)?.code).join(', ');
+          const useCaseCodes = testCase.useCaseIds.map((id) => useCases.find((item) => item.id === id)?.code).filter(Boolean).join(', ');
           const scenario = scenarios.find((item) => item.id === testCase.scenarioId);
           const script = automationScripts.find((item) => item.testCaseId === testCase.id);
           const result = latestResultFor(testCase, results);
@@ -233,14 +342,10 @@ function RunsView({ testCases, results }: { testCases: TestCase[]; results: Test
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <p>Điều phối kiểm thử</p>
-          <h2>Đợt kiểm thử và kết quả chi tiết</h2>
+          <p>Kết quả kiểm thử</p>
+          <h2>Kết quả chi tiết theo đợt đang chọn</h2>
         </div>
-        <LockKeyhole aria-hidden />
-      </div>
-      <div className="callout">
-        <strong>Chính sách khóa đợt kiểm thử:</strong>
-        <span>Đợt kiểm thử đã khóa chỉ được điều chỉnh bằng biên bản/phiên bản mới và phải ghi nhật ký kiểm toán.</span>
+        <PlayCircle aria-hidden />
       </div>
       <DataTable
         columns={['Ca kiểm thử', 'Trạng thái', 'Cách chạy', 'Kết quả thực tế', 'Commit', 'Số lần chạy lại']}
@@ -253,9 +358,7 @@ function RunsView({ testCases, results }: { testCases: TestCase[]; results: Test
                 <strong>{testCase?.code}</strong>
                 <span>{testCase?.title}</span>
               </td>
-              <td>
-                <Badge tone={statusTone(result.status)}>{resultStatusLabel(result.status)}</Badge>
-              </td>
+              <td><Badge tone={statusTone(result.status)}>{resultStatusLabel(result.status)}</Badge></td>
               <td>{runnerTypeLabel(result.runnerType)}</td>
               <td>{result.actualResult}</td>
               <td>{result.commitSha}</td>
@@ -274,7 +377,7 @@ function DefectsView({ defects }: { defects: Defect[] }) {
       <div className="panel-heading">
         <div>
           <p>Quản lý lỗi</p>
-          <h2>Lỗi liên kết với kết quả không đạt</h2>
+          <h2>Lỗi của dự án đang chọn</h2>
         </div>
         <Bug aria-hidden />
       </div>
@@ -347,77 +450,84 @@ function EvidenceView({ auditLogs }: { auditLogs: AuditLog[] }) {
 }
 
 interface EntryViewProps {
+  selectedProject?: Project;
+  selectedRun?: TestRun;
+  projects: Project[];
   useCases: UseCase[];
   testCases: TestCase[];
   testRuns: TestRun[];
   results: TestResult[];
+  onAddProject: (row: Project) => void;
   onAddUseCase: (row: UseCase) => void;
   onAddTestCase: (testCase: TestCase, scenario: TestScenario) => void;
   onAddTestRun: (row: TestRun) => void;
+  onUpdateRunScope: (runId: string, useCaseIds: string[]) => void;
   onAddResult: (row: TestResult) => void;
   onAddDefect: (row: Defect) => void;
   onReset: () => void;
 }
 
-function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAddTestCase, onAddTestRun, onAddResult, onAddDefect, onReset }: EntryViewProps) {
+function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
+  const [projectForm, setProjectForm] = useState({ code: nextCode('PRJ-NEW', projects.length + 1), name: '', ownerUnit: '' });
   const [useCaseForm, setUseCaseForm] = useState({ code: nextCode('UC-NEW', useCases.length + 1), title: '', module: 'general' });
   const [testCaseForm, setTestCaseForm] = useState({ code: nextCode('TC-NEW', testCases.length + 1), title: '', useCaseId: useCases[0]?.id ?? '', expectedResult: '', steps: '', priority: 'P1' as TestCase['priority'], suite: 'functional' as TestCase['suite'], automationStatus: 'Manual' as TestCase['automationStatus'] });
-  const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'] });
-  const [resultForm, setResultForm] = useState({ testRunId: testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
+  const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'], useCaseIds: useCases.map((useCase) => useCase.id) });
+  const [resultForm, setResultForm] = useState({ testRunId: selectedRun?.id ?? testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
   const [importMessage, setImportMessage] = useState('');
+  const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
+
+  function submitProject(event: FormEvent) {
+    event.preventDefault();
+    onAddProject({ id: createId('prj'), code: projectForm.code.trim(), name: projectForm.name.trim(), ownerUnit: projectForm.ownerUnit.trim(), status: 'Active' });
+    setProjectForm({ code: nextCode('PRJ-NEW', projects.length + 2), name: '', ownerUnit: '' });
+  }
 
   function submitUseCase(event: FormEvent) {
     event.preventDefault();
-    const id = createId('uc');
-    onAddUseCase({
-      id,
-      projectId: projects[0].id,
+    if (!selectedProject) return;
+    const row = {
+      id: createId('uc'),
+      projectId: selectedProject.id,
       code: useCaseForm.code.trim(),
       title: useCaseForm.title.trim(),
       module: useCaseForm.module.trim(),
       approvedVersion: '1.0',
-      status: 'Approved'
-    });
+      status: 'Approved' as const
+    };
+    onAddUseCase(row);
+    if (selectedRun) onUpdateRunScope(selectedRun.id, [...new Set([...scopedRunIds, row.id])]);
     setUseCaseForm({ code: nextCode('UC-NEW', useCases.length + 2), title: '', module: 'general' });
   }
 
   function submitTestCase(event: FormEvent) {
     event.preventDefault();
-    const testCaseId = createId('tc');
-    const scenario: TestScenario = {
-      id: createId('ts'),
-      useCaseId: testCaseForm.useCaseId,
-      code: nextCode('TS-NEW', Date.now() % 1000),
-      title: `Tình huống cho ${testCaseForm.code}`,
-      type: 'positive'
-    };
-    onAddTestCase(
-      {
-        id: testCaseId,
-        code: testCaseForm.code.trim(),
-        scenarioId: scenario.id,
-        useCaseIds: [testCaseForm.useCaseId],
-        title: testCaseForm.title.trim(),
-        priority: testCaseForm.priority,
-        suite: testCaseForm.suite,
-        automationStatus: testCaseForm.automationStatus,
-        expectedResult: testCaseForm.expectedResult.trim(),
-        steps: testCaseForm.steps.split('\n').map((step) => step.trim()).filter(Boolean)
-      },
-      scenario
-    );
+    const scenario = { id: createId('ts'), useCaseId: testCaseForm.useCaseId, code: nextCode('TS-NEW', Date.now() % 1000), title: `Tình huống cho ${testCaseForm.code}`, type: 'positive' as const };
+    onAddTestCase({
+      id: createId('tc'),
+      code: testCaseForm.code.trim(),
+      scenarioId: scenario.id,
+      useCaseIds: [testCaseForm.useCaseId],
+      title: testCaseForm.title.trim(),
+      priority: testCaseForm.priority,
+      suite: testCaseForm.suite,
+      automationStatus: testCaseForm.automationStatus,
+      expectedResult: testCaseForm.expectedResult.trim(),
+      steps: testCaseForm.steps.split('\n').map((step) => step.trim()).filter(Boolean)
+    }, scenario);
     setTestCaseForm((current) => ({ ...current, code: nextCode('TC-NEW', testCases.length + 2), title: '', expectedResult: '', steps: '' }));
   }
 
   function submitRun(event: FormEvent) {
     event.preventDefault();
+    if (!selectedProject) return;
     onAddTestRun({
       id: createId('run'),
       code: runForm.code.trim(),
-      projectId: projects[0].id,
-      environmentId: environments[0].id,
-      applicationVersionId: applicationVersions[0].id,
+      projectId: selectedProject.id,
+      environmentId: environments.find((environment) => environment.projectId === selectedProject.id)?.id ?? environments[0].id,
+      applicationVersionId: applicationVersions.find((version) => version.projectId === selectedProject.id)?.id ?? applicationVersions[0].id,
+      useCaseIds: runForm.useCaseIds,
       suite: runForm.suite.trim(),
       status: runForm.status,
       startedAt: new Date().toISOString(),
@@ -428,82 +538,41 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
 
   function submitResult(event: FormEvent) {
     event.preventDefault();
-    onAddResult({
-      id: createId('res'),
-      testRunId: resultForm.testRunId,
-      testCaseId: resultForm.testCaseId,
-      status: resultForm.status,
-      actualResult: resultForm.actualResult.trim(),
-      runnerType: 'manual',
-      commitSha: 'manual-local',
-      durationMs: 0,
-      executedAt: new Date().toISOString(),
-      retryCount: 0
-    });
+    onAddResult({ id: createId('res'), testRunId: resultForm.testRunId, testCaseId: resultForm.testCaseId, status: resultForm.status, actualResult: resultForm.actualResult.trim(), runnerType: 'manual', commitSha: 'manual-local', durationMs: 0, executedAt: new Date().toISOString(), retryCount: 0 });
     setResultForm((current) => ({ ...current, actualResult: '' }));
   }
 
   function submitDefect(event: FormEvent) {
     event.preventDefault();
-    onAddDefect({
-      id: createId('def'),
-      code: `DEF-KTKT-${String(Date.now()).slice(-4)}`,
-      projectId: projects[0].id,
-      title: defectForm.title.trim(),
-      severity: defectForm.severity,
-      priority: defectForm.priority,
-      status: 'Open',
-      linkedResultIds: [defectForm.resultId],
-      foundInVersion: applicationVersions[0].version
-    });
+    if (!selectedProject) return;
+    onAddDefect({ id: createId('def'), code: `DEF-${selectedProject.code.replace(/^PRJ-/, '')}-${String(Date.now()).slice(-4)}`, projectId: selectedProject.id, title: defectForm.title.trim(), severity: defectForm.severity, priority: defectForm.priority, status: 'Open', linkedResultIds: [defectForm.resultId], foundInVersion: applicationVersions[0].version });
     setDefectForm((current) => ({ ...current, title: '' }));
   }
 
   async function importDocx(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedProject) return;
 
     try {
       const mammoth = await import('mammoth/mammoth.browser');
-      const arrayBuffer = await file.arrayBuffer();
-      const extracted = await mammoth.extractRawText({ arrayBuffer });
+      const extracted = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
       const importedCases = parseImportedTestCases(extracted.value);
-
       if (importedCases.length === 0) {
         setImportMessage('Không tìm thấy mã kịch bản dạng TCs_... trong file Word.');
         return;
       }
 
-      let importedCount = 0;
       const useCaseCache = [...useCases];
+      const importedUseCaseIds = new Set<string>();
+      let importedCount = 0;
       for (const importedCase of importedCases) {
-        const targetUseCase = findOrCreateUseCaseForImport(useCaseCache, importedCase.moduleTitle, onAddUseCase);
-        const scenario: TestScenario = {
-          id: createId('ts'),
-          useCaseId: targetUseCase.id,
-          code: nextCode('TS-IMP', Date.now() % 1000),
-          title: importedCase.title,
-          type: 'positive'
-        };
-
-        onAddTestCase(
-          {
-            id: createId('tc'),
-            code: importedCase.id,
-            scenarioId: scenario.id,
-            useCaseIds: [targetUseCase.id],
-            title: importedCase.title,
-            priority: 'P1',
-            suite: 'functional',
-            automationStatus: 'Manual',
-            expectedResult: importedCase.expectedResult,
-            steps: importedCase.steps
-          },
-          scenario
-        );
+        const targetUseCase = findOrCreateUseCaseForImport(useCaseCache, selectedProject.id, importedCase.moduleTitle, onAddUseCase);
+        importedUseCaseIds.add(targetUseCase.id);
+        const scenario = { id: createId('ts'), useCaseId: targetUseCase.id, code: nextCode('TS-IMP', Date.now() % 1000), title: importedCase.title, type: 'positive' as const };
+        onAddTestCase({ id: createId('tc'), code: importedCase.id, scenarioId: scenario.id, useCaseIds: [targetUseCase.id], title: importedCase.title, priority: 'P1', suite: 'functional', automationStatus: 'Manual', expectedResult: importedCase.expectedResult, steps: importedCase.steps }, scenario);
         importedCount += 1;
       }
-
+      if (selectedRun) onUpdateRunScope(selectedRun.id, [...new Set([...scopedRunIds, ...importedUseCaseIds])]);
       setImportMessage(`Đã import ${importedCount} ca kiểm thử từ file ${file.name}.`);
       event.target.value = '';
     } catch (error) {
@@ -516,36 +585,61 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p>Nhập dữ liệu vận hành</p>
-            <h2>Tạo UC, ca kiểm thử, đợt chạy, kết quả và lỗi</h2>
+            <p>Nhập dữ liệu quản lý</p>
+            <h2>Dự án, đợt kiểm thử và phạm vi UC</h2>
           </div>
           <Database aria-hidden />
         </div>
         <div className="callout">
           <strong>Lưu ý:</strong>
-          <span>Dữ liệu nhập ở bản demo được lưu trong trình duyệt của bạn. Khi nối Supabase, các form này sẽ ghi vào cơ sở dữ liệu thật.</span>
+          <span>Dữ liệu demo lưu trong trình duyệt. Khi nối Supabase, các form này sẽ ghi vào cơ sở dữ liệu thật.</span>
         </div>
         <button className="secondary-action" type="button" onClick={onReset}>Khôi phục dữ liệu mẫu</button>
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p>Import kịch bản Word</p>
-            <h2>Tải file .docx có mã TCs_... để tạo ca kiểm thử</h2>
-          </div>
-          <FileCheck2 aria-hidden />
-        </div>
-        <label className="file-import">
-          <span>Chọn file kịch bản kiểm thử Word</span>
-          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
-        </label>
-        {importMessage && <p className="form-note">{importMessage}</p>}
-      </section>
-
       <div className="form-grid">
+        <form className="entry-form" onSubmit={submitProject}>
+          <h3>Thêm dự án</h3>
+          <label>Mã dự án<input value={projectForm.code} onChange={(event) => setProjectForm({ ...projectForm, code: event.target.value })} required /></label>
+          <label>Tên dự án<input value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} required /></label>
+          <label>Đơn vị quản lý<input value={projectForm.ownerUnit} onChange={(event) => setProjectForm({ ...projectForm, ownerUnit: event.target.value })} required /></label>
+          <button type="submit">Lưu dự án</button>
+        </form>
+
+        <form className="entry-form" onSubmit={submitRun}>
+          <h3>Tạo đợt kiểm thử</h3>
+          <label>Mã đợt kiểm thử<input value={runForm.code} onChange={(event) => setRunForm({ ...runForm, code: event.target.value })} required /></label>
+          <label>Bộ kiểm thử<input value={runForm.suite} onChange={(event) => setRunForm({ ...runForm, suite: event.target.value })} required /></label>
+          <label>Trạng thái<select value={runForm.status} onChange={(event) => setRunForm({ ...runForm, status: event.target.value as TestRun['status'] })}><option value="Planning">Đang lập kế hoạch</option><option value="Running">Đang chạy</option><option value="Completed">Hoàn tất</option><option value="Locked">Đã khóa</option></select></label>
+          <fieldset className="checkbox-list">
+            <legend>Danh sách UC thuộc đợt kiểm thử</legend>
+            {useCases.map((useCase) => (
+              <label key={useCase.id}>
+                <input type="checkbox" checked={runForm.useCaseIds.includes(useCase.id)} onChange={(event) => setRunForm({ ...runForm, useCaseIds: toggleValue(runForm.useCaseIds, useCase.id, event.target.checked) })} />
+                <span>{useCase.code} - {useCase.title}</span>
+              </label>
+            ))}
+          </fieldset>
+          <button type="submit">Tạo đợt kiểm thử</button>
+        </form>
+
+        {selectedRun && (
+          <section className="entry-form">
+            <h3>Cập nhật phạm vi UC của đợt đang chọn</h3>
+            <fieldset className="checkbox-list">
+              <legend>{selectedRun.code}</legend>
+              {useCases.map((useCase) => (
+                <label key={useCase.id}>
+                  <input type="checkbox" checked={scopedRunIds.includes(useCase.id)} onChange={(event) => onUpdateRunScope(selectedRun.id, toggleValue(scopedRunIds, useCase.id, event.target.checked))} />
+                  <span>{useCase.code} - {useCase.title}</span>
+                </label>
+              ))}
+            </fieldset>
+          </section>
+        )}
+
         <form className="entry-form" onSubmit={submitUseCase}>
-          <h3>Thêm Use Case</h3>
+          <h3>Thêm UC cho dự án đang chọn</h3>
           <label>Mã UC<input value={useCaseForm.code} onChange={(event) => setUseCaseForm({ ...useCaseForm, code: event.target.value })} required /></label>
           <label>Tên UC<input value={useCaseForm.title} onChange={(event) => setUseCaseForm({ ...useCaseForm, title: event.target.value })} required /></label>
           <label>Phân hệ<input value={useCaseForm.module} onChange={(event) => setUseCaseForm({ ...useCaseForm, module: event.target.value })} required /></label>
@@ -559,20 +653,7 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
           <label>UC liên kết<select value={testCaseForm.useCaseId} onChange={(event) => setTestCaseForm({ ...testCaseForm, useCaseId: event.target.value })} required>{useCases.map((useCase) => <option key={useCase.id} value={useCase.id}>{useCase.code} - {useCase.title}</option>)}</select></label>
           <label>Kết quả mong đợi<textarea value={testCaseForm.expectedResult} onChange={(event) => setTestCaseForm({ ...testCaseForm, expectedResult: event.target.value })} required /></label>
           <label>Các bước thực hiện<textarea value={testCaseForm.steps} onChange={(event) => setTestCaseForm({ ...testCaseForm, steps: event.target.value })} placeholder="Mỗi dòng là một bước" /></label>
-          <div className="inline-fields">
-            <label>Ưu tiên<select value={testCaseForm.priority} onChange={(event) => setTestCaseForm({ ...testCaseForm, priority: event.target.value as TestCase['priority'] })}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
-            <label>Bộ kiểm thử<select value={testCaseForm.suite} onChange={(event) => setTestCaseForm({ ...testCaseForm, suite: event.target.value as TestCase['suite'] })}><option value="smoke">Smoke</option><option value="functional">Functional</option><option value="regression">Regression</option></select></label>
-          </div>
-          <label>Trạng thái tự động hóa<select value={testCaseForm.automationStatus} onChange={(event) => setTestCaseForm({ ...testCaseForm, automationStatus: event.target.value as TestCase['automationStatus'] })}><option value="Manual">Thủ công</option><option value="Candidate">Ứng viên tự động hóa</option><option value="Automated">Đã tự động hóa</option><option value="Blocked">Bị chặn</option></select></label>
           <button type="submit">Lưu ca kiểm thử</button>
-        </form>
-
-        <form className="entry-form" onSubmit={submitRun}>
-          <h3>Tạo đợt kiểm thử</h3>
-          <label>Mã đợt kiểm thử<input value={runForm.code} onChange={(event) => setRunForm({ ...runForm, code: event.target.value })} required /></label>
-          <label>Bộ kiểm thử<input value={runForm.suite} onChange={(event) => setRunForm({ ...runForm, suite: event.target.value })} required /></label>
-          <label>Trạng thái<select value={runForm.status} onChange={(event) => setRunForm({ ...runForm, status: event.target.value as TestRun['status'] })}><option value="Planning">Đang lập kế hoạch</option><option value="Running">Đang chạy</option><option value="Completed">Hoàn tất</option><option value="Locked">Đã khóa</option></select></label>
-          <button type="submit">Tạo đợt kiểm thử</button>
         </form>
 
         <form className="entry-form" onSubmit={submitResult}>
@@ -588,13 +669,24 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
           <h3>Tạo lỗi</h3>
           <label>Kết quả liên kết<select value={defectForm.resultId} onChange={(event) => setDefectForm({ ...defectForm, resultId: event.target.value })} required>{results.map((result) => <option key={result.id} value={result.id}>{resultStatusLabel(result.status)} - {result.actualResult}</option>)}</select></label>
           <label>Tiêu đề lỗi<input value={defectForm.title} onChange={(event) => setDefectForm({ ...defectForm, title: event.target.value })} required /></label>
-          <div className="inline-fields">
-            <label>Mức độ<select value={defectForm.severity} onChange={(event) => setDefectForm({ ...defectForm, severity: event.target.value as Defect['severity'] })}><option value="Critical">Nghiêm trọng</option><option value="High">Cao</option><option value="Medium">Trung bình</option><option value="Low">Thấp</option></select></label>
-            <label>Ưu tiên<select value={defectForm.priority} onChange={(event) => setDefectForm({ ...defectForm, priority: event.target.value as Defect['priority'] })}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
-          </div>
           <button type="submit">Tạo lỗi</button>
         </form>
       </div>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Import kịch bản Word</p>
+            <h2>Tải file .docx có mã TCs_... để tạo ca kiểm thử</h2>
+          </div>
+          <FileCheck2 aria-hidden />
+        </div>
+        <label className="file-import">
+          <span>File sẽ được import vào dự án và đợt kiểm thử đang chọn</span>
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
+        </label>
+        {importMessage && <p className="form-note">{importMessage}</p>}
+      </section>
     </div>
   );
 }
@@ -610,6 +702,18 @@ function useStoredState<T>(key: string, initialValue: T): [T, Dispatch<SetStateA
   }, [key, value]);
 
   return [value, setValue];
+}
+
+function normalizeRuns(runs: TestRun[], useCases: UseCase[]): TestRun[] {
+  return runs.map((run) => ({ ...run, useCaseIds: run.useCaseIds?.length ? run.useCaseIds : useCases.filter((useCase) => useCase.projectId === run.projectId).map((useCase) => useCase.id) }));
+}
+
+function getRunUseCaseIds(run: TestRun | undefined, useCases: UseCase[]): string[] {
+  return run?.useCaseIds?.length ? run.useCaseIds : useCases.map((useCase) => useCase.id);
+}
+
+function toggleValue(values: string[], value: string, checked: boolean): string[] {
+  return checked ? [...new Set([...values, value])] : values.filter((item) => item !== value);
 }
 
 function createId(prefix: string): string {
@@ -629,55 +733,27 @@ interface ImportedTestCase {
 }
 
 function parseImportedTestCases(rawText: string): ImportedTestCase[] {
-  const lines = rawText
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
+  const lines = rawText.replace(/\r/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean);
   const cases: ImportedTestCase[] = [];
   let currentModule = 'Kịch bản import từ Word';
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     if (/^(I|II|III|IV|V|\d+)\./.test(line) && !/^TCs?[_-]/i.test(line)) {
-      currentModule = line.replace(/\s*\|?\s*$/g, '');
+      currentModule = cleanCell(line);
       continue;
     }
-
     const match = line.match(/^(TCs?[_-]?\d+)\b/i);
     if (!match) continue;
-
-    const id = normalizeImportedCaseId(match[1]);
-    const title = cleanCell(lines[index + 1] ?? id);
-    const steps = splitNumberedSteps(cleanCell(lines[index + 2] ?? ''));
-    const expectedResult = cleanCell(lines[index + 3] ?? '');
-
-    cases.push({
-      id,
-      moduleTitle: currentModule,
-      title,
-      steps,
-      expectedResult
-    });
+    cases.push({ id: normalizeImportedCaseId(match[1]), moduleTitle: currentModule, title: cleanCell(lines[index + 1] ?? match[1]), steps: splitNumberedSteps(cleanCell(lines[index + 2] ?? '')), expectedResult: cleanCell(lines[index + 3] ?? '') });
   }
-
   return cases;
 }
 
-function findOrCreateUseCaseForImport(cache: UseCase[], moduleTitle: string, onAddUseCase: (row: UseCase) => void): UseCase {
-  const existing = cache.find((row) => row.title === moduleTitle);
+function findOrCreateUseCaseForImport(cache: UseCase[], projectId: string, moduleTitle: string, onAddUseCase: (row: UseCase) => void): UseCase {
+  const existing = cache.find((row) => row.projectId === projectId && row.title === moduleTitle);
   if (existing) return existing;
-
-  const row: UseCase = {
-    id: createId('uc-import'),
-    projectId: projects[0].id,
-    code: nextCode('UC-IMP', cache.length + 1),
-    title: moduleTitle,
-    module: 'import-word',
-    approvedVersion: '1.0',
-    status: 'Approved'
-  };
+  const row = { id: createId('uc-import'), projectId, code: nextCode('UC-IMP', cache.filter((item) => item.projectId === projectId).length + 1), title: moduleTitle, module: 'import-word', approvedVersion: '1.0', status: 'Approved' as const };
   cache.push(row);
   onAddUseCase(row);
   return row;
@@ -692,39 +768,20 @@ function cleanCell(value: string): string {
 }
 
 function splitNumberedSteps(value: string): string[] {
-  const parts = value
-    .split(/(?=\b\d+\.\s*)/g)
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const parts = value.split(/(?=\b\d+\.\s*)/g).map((part) => part.trim()).filter(Boolean);
   return parts.length > 0 ? parts : [value];
 }
 
 function latestResultFor(testCase: TestCase, results: TestResult[]): TestResult | undefined {
-  return results
-    .filter((result) => result.testCaseId === testCase.id)
-    .sort((left, right) => new Date(right.executedAt).getTime() - new Date(left.executedAt).getTime())[0];
+  return results.filter((result) => result.testCaseId === testCase.id).sort((left, right) => new Date(right.executedAt).getTime() - new Date(left.executedAt).getTime())[0];
 }
 
 function resultStatusLabel(status: ResultStatus): string {
-  const labels: Record<ResultStatus, string> = {
-    Pass: 'Đạt',
-    Fail: 'Không đạt',
-    Blocked: 'Bị chặn',
-    'Not Run': 'Chưa chạy',
-    Flaky: 'Không ổn định',
-    'Infrastructure Error': 'Lỗi hạ tầng'
-  };
-  return labels[status];
+  return { Pass: 'Đạt', Fail: 'Không đạt', Blocked: 'Bị chặn', 'Not Run': 'Chưa chạy', Flaky: 'Không ổn định', 'Infrastructure Error': 'Lỗi hạ tầng' }[status];
 }
 
 function automationStatusLabel(status: TestCase['automationStatus']): string {
-  const labels: Record<TestCase['automationStatus'], string> = {
-    Automated: 'Đã tự động hóa',
-    Manual: 'Thủ công',
-    Candidate: 'Ứng viên tự động hóa',
-    Blocked: 'Bị chặn'
-  };
-  return labels[status];
+  return { Automated: 'Đã tự động hóa', Manual: 'Thủ công', Candidate: 'Ứng viên tự động hóa', Blocked: 'Bị chặn' }[status];
 }
 
 function runnerTypeLabel(type: TestResult['runnerType']): string {
@@ -732,54 +789,28 @@ function runnerTypeLabel(type: TestResult['runnerType']): string {
 }
 
 function runStatusLabel(status: TestRun['status']): string {
-  const labels: Record<TestRun['status'], string> = {
-    Planning: 'Đang lập kế hoạch',
-    Running: 'Đang chạy',
-    Completed: 'Hoàn tất',
-    Locked: 'Đã khóa'
-  };
-  return labels[status];
+  return { Planning: 'Đang lập kế hoạch', Running: 'Đang chạy', Completed: 'Hoàn tất', Locked: 'Đã khóa' }[status];
 }
 
 function severityLabel(severity: Defect['severity']): string {
-  const labels: Record<Defect['severity'], string> = {
-    Critical: 'Nghiêm trọng',
-    High: 'Cao',
-    Medium: 'Trung bình',
-    Low: 'Thấp'
-  };
-  return labels[severity];
+  return { Critical: 'Nghiêm trọng', High: 'Cao', Medium: 'Trung bình', Low: 'Thấp' }[severity];
 }
 
 function defectStatusLabel(status: Defect['status']): string {
-  const labels: Record<Defect['status'], string> = {
-    Open: 'Mở',
-    'In Progress': 'Đang xử lý',
-    Fixed: 'Đã sửa',
-    Retest: 'Kiểm thử lại',
-    Closed: 'Đã đóng',
-    'Accepted Risk': 'Chấp nhận rủi ro'
-  };
-  return labels[status];
+  return { Open: 'Mở', 'In Progress': 'Đang xử lý', Fixed: 'Đã sửa', Retest: 'Kiểm thử lại', Closed: 'Đã đóng', 'Accepted Risk': 'Chấp nhận rủi ro' }[status];
 }
 
 function evidenceTypeLabel(type: Evidence['type']): string {
-  const labels: Record<Evidence['type'], string> = {
-    screenshot: 'Ảnh chụp',
-    video: 'Video',
-    trace: 'Trace',
-    log: 'Log',
-    'html-report': 'Báo cáo HTML',
-    junit: 'JUnit'
-  };
-  return labels[type];
+  return { screenshot: 'Ảnh chụp', video: 'Video', trace: 'Trace', log: 'Log', 'html-report': 'Báo cáo HTML', junit: 'JUnit' }[type];
 }
 
 function auditActionLabel(action: string): string {
   const labels: Record<string, string> = {
+    CREATE_PROJECT: 'Tạo dự án',
     CREATE_USE_CASE: 'Tạo UC',
     CREATE_TEST_CASE: 'Tạo ca kiểm thử',
     CREATE_TEST_RUN: 'Tạo đợt kiểm thử',
+    UPDATE_TEST_RUN_SCOPE: 'Cập nhật phạm vi UC',
     CREATE_MANUAL_RESULT: 'Ghi kết quả thủ công',
     LOCK_TEST_RUN: 'Khóa đợt kiểm thử',
     INGEST_AUTOMATION_RESULT: 'Nhận kết quả tự động',

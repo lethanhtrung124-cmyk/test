@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('@project:KTKT @module:test-case @suite:smoke', () => {
-  test('UC-TC-001 | TC-TC-001 | Test Case bắt buộc liên kết tối thiểu một UC', async ({ page }) => {
+  test('UC-TC-001 | TC-TC-001 | Ma trận truy vết lọc theo đợt kiểm thử', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Ma trận truy vết' }).click();
 

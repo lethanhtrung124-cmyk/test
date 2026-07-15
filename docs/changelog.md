@@ -8,3 +8,4 @@
 - Thêm Playwright config, test mẫu và script generate/publish summary.
 - Thêm GitHub Actions CI với workflow_dispatch.
 - Thêm Netlify config và tài liệu kiến trúc.
+- Bổ sung quản lý theo dự án, đợt kiểm thử và danh sách UC riêng cho từng đợt.

@@ -138,6 +138,35 @@ h2 {
   gap: 8px;
 }
 
+.selector-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.selector-bar label,
+.checkbox-list legend {
+  display: grid;
+  gap: 6px;
+  color: #485653;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.selector-bar select {
+  width: 100%;
+  border: 1px solid #ccd8d4;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #16211f;
+  background: #fbfdfc;
+  font: inherit;
+}
+
 .stack {
   display: grid;
   gap: 18px;
@@ -224,6 +253,30 @@ h2 {
   display: block;
   margin-top: 6px;
   font-size: 26px;
+}
+
+.management-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.management-grid div {
+  border: 1px solid #e2e8e5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f7faf9;
+}
+
+.management-grid span {
+  display: block;
+  color: #5c6d69;
+  font-size: 13px;
+}
+
+.management-grid strong {
+  display: block;
+  margin-top: 6px;
 }
 
 .table-wrap {
@@ -379,6 +432,28 @@ td span {
   gap: 10px;
 }
 
+.checkbox-list {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.checkbox-list label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.checkbox-list input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+}
+
 .file-import {
   display: grid;
   gap: 8px;
@@ -418,9 +493,11 @@ td span {
     text-align: center;
   }
 
+  .selector-bar,
   .metrics-grid,
   .status-grid,
-  .form-grid {
+  .form-grid,
+  .management-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -441,9 +518,11 @@ td span {
     grid-template-columns: 1fr;
   }
 
+  .selector-bar,
   .metrics-grid,
   .status-grid,
   .form-grid,
+  .management-grid,
   .inline-fields {
     grid-template-columns: 1fr;
   }

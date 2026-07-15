@@ -83,6 +83,7 @@ export interface TestRun {
   projectId: string;
   environmentId: string;
   applicationVersionId: string;
+  useCaseIds: string[];
   suite: string;
   status: 'Planning' | 'Running' | 'Completed' | 'Locked';
   startedAt: string;

@@ -149,6 +149,7 @@ export const testRuns: TestRun[] = [
     projectId: 'prj-1',
     environmentId: 'env-uat',
     applicationVersionId: 'app-v2',
+    useCaseIds: ['uc-1', 'uc-3', 'uc-4', 'uc-5'],
     suite: 'smoke + regression pilot',
     status: 'Locked',
     startedAt: '2026-07-15T04:00:00Z',
