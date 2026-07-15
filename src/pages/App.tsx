@@ -29,16 +29,16 @@ import {
 } from '../services/mockData';
 import { calculateMetrics, statusTone } from '../services/metrics';
 import { dataMode } from '../services/supabaseClient';
-import type { TestCase, TestResult } from '../types/domain';
+import type { Defect, Evidence, ResultStatus, TestCase, TestResult, TestRun } from '../types/domain';
 
 type Tab = 'dashboard' | 'rtm' | 'runs' | 'defects' | 'evidence';
 
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'rtm', label: 'RTM' },
-  { id: 'runs', label: 'Test Run' },
-  { id: 'defects', label: 'Defect' },
-  { id: 'evidence', label: 'Evidence & Audit' }
+  { id: 'dashboard', label: 'Bảng điều khiển' },
+  { id: 'rtm', label: 'Ma trận truy vết' },
+  { id: 'runs', label: 'Đợt kiểm thử' },
+  { id: 'defects', label: 'Lỗi' },
+  { id: 'evidence', label: 'Minh chứng & nhật ký' }
 ];
 
 export function App() {
@@ -55,8 +55,8 @@ export function App() {
         <div className="brand">
           <ShieldCheck aria-hidden size={28} />
           <div>
-            <strong>UC Test Platform</strong>
-            <span>Baseline v2.0.0</span>
+            <strong>Nền tảng kiểm thử UC</strong>
+            <span>Bản nền v2.0.0</span>
           </div>
         </div>
         <nav aria-label="Điều hướng chính">
@@ -68,8 +68,8 @@ export function App() {
         </nav>
         <div className="side-panel">
           <p>Nguồn dữ liệu</p>
-          <strong>{dataMode === 'supabase' ? 'Supabase' : 'Mock pilot'}</strong>
-          <span>RLS bắt buộc khi dùng Supabase thật</span>
+          <strong>{dataMode === 'supabase' ? 'Supabase' : 'Dữ liệu mẫu'}</strong>
+          <span>Bắt buộc bật RLS khi dùng Supabase thật</span>
         </div>
       </aside>
 
@@ -82,7 +82,7 @@ export function App() {
           <div className="run-summary">
             <Badge tone="info">{environment?.code}</Badge>
             <Badge tone="success">{version?.version}</Badge>
-            <Badge tone="warning">{activeRun.status}</Badge>
+            <Badge tone="warning">{runStatusLabel(activeRun.status)}</Badge>
           </div>
         </header>
 
@@ -100,10 +100,10 @@ function Dashboard({ metrics }: { metrics: ReturnType<typeof calculateMetrics> }
   return (
     <div className="stack">
       <div className="metrics-grid">
-        <MetricCard label="Coverage UC" value={`${metrics.ucCoverage}%`} hint={`${useCases.length} UC, ${testCases.length} Test Case`} icon={<FileCheck2 size={22} />} />
-        <MetricCard label="Đã chạy" value={`${metrics.executedRate}%`} hint="Không tính Not Run" icon={<PlayCircle size={22} />} />
-        <MetricCard label="Pass rate" value={`${metrics.passRate}%`} hint="Pass trên kết quả đã thực hiện" icon={<CheckCircle2 size={22} />} />
-        <MetricCard label="Tự động hóa" value={`${metrics.automationRate}%`} hint="Test Case đã có script duyệt" icon={<GitBranch size={22} />} />
+        <MetricCard label="Độ phủ UC" value={`${metrics.ucCoverage}%`} hint={`${useCases.length} UC, ${testCases.length} ca kiểm thử`} icon={<FileCheck2 size={22} />} />
+        <MetricCard label="Đã thực hiện" value={`${metrics.executedRate}%`} hint="Không tính trạng thái chưa chạy" icon={<PlayCircle size={22} />} />
+        <MetricCard label="Tỷ lệ đạt" value={`${metrics.passRate}%`} hint="Đạt trên kết quả đã thực hiện" icon={<CheckCircle2 size={22} />} />
+        <MetricCard label="Tự động hóa" value={`${metrics.automationRate}%`} hint="Ca kiểm thử đã có script duyệt" icon={<GitBranch size={22} />} />
       </div>
 
       <section className="panel">
@@ -117,7 +117,7 @@ function Dashboard({ metrics }: { metrics: ReturnType<typeof calculateMetrics> }
         <div className="status-grid">
           {Object.entries(metrics.statusCounts).map(([status, count]) => (
             <div key={status} className="status-cell">
-              <span>{status}</span>
+              <span>{resultStatusLabel(status as ResultStatus)}</span>
               <strong>{count}</strong>
             </div>
           ))}
@@ -132,13 +132,13 @@ function RtmView() {
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <p>Requirement Traceability Matrix</p>
-          <h2>UC / Scenario / Test Case / Script / Result</h2>
+          <p>Ma trận truy vết yêu cầu</p>
+          <h2>UC / Tình huống / Ca kiểm thử / Script / Kết quả</h2>
         </div>
         <FileCheck2 aria-hidden />
       </div>
       <DataTable
-        columns={['UC', 'Scenario', 'Test Case', 'Automation', 'Latest Result']}
+        columns={['UC', 'Tình huống', 'Ca kiểm thử', 'Tự động hóa', 'Kết quả mới nhất']}
         rows={testCases}
         renderRow={(testCase) => {
           const useCaseCodes = testCase.useCaseIds.map((id) => useCases.find((item) => item.id === id)?.code).join(', ');
@@ -154,10 +154,10 @@ function RtmView() {
                 <span>{testCase.title}</span>
               </td>
               <td>
-                <Badge tone={script ? 'success' : 'neutral'}>{testCase.automationStatus}</Badge>
-                <span>{script?.path ?? 'Manual only'}</span>
+                <Badge tone={script ? 'success' : 'neutral'}>{automationStatusLabel(testCase.automationStatus)}</Badge>
+                <span>{script?.path ?? 'Chỉ kiểm thử thủ công'}</span>
               </td>
-              <td>{result ? <Badge tone={statusTone(result.status)}>{result.status}</Badge> : <Badge>Not Run</Badge>}</td>
+              <td>{result ? <Badge tone={statusTone(result.status)}>{resultStatusLabel(result.status)}</Badge> : <Badge>Chưa chạy</Badge>}</td>
             </tr>
           );
         }}
@@ -172,16 +172,16 @@ function RunsView() {
       <div className="panel-heading">
         <div>
           <p>Điều phối kiểm thử</p>
-          <h2>Test Run và kết quả chi tiết</h2>
+          <h2>Đợt kiểm thử và kết quả chi tiết</h2>
         </div>
         <LockKeyhole aria-hidden />
       </div>
       <div className="callout">
-        <strong>Chính sách khóa run:</strong>
-        <span>Run đã khóa chỉ được điều chỉnh bằng biên bản/version mới và phải ghi audit log.</span>
+        <strong>Chính sách khóa đợt kiểm thử:</strong>
+        <span>Đợt kiểm thử đã khóa chỉ được điều chỉnh bằng biên bản/phiên bản mới và phải ghi nhật ký kiểm toán.</span>
       </div>
       <DataTable
-        columns={['Test Case', 'Status', 'Runner', 'Actual Result', 'Commit', 'Retry']}
+        columns={['Ca kiểm thử', 'Trạng thái', 'Cách chạy', 'Kết quả thực tế', 'Commit', 'Số lần chạy lại']}
         rows={testResults}
         renderRow={(result) => {
           const testCase = testCases.find((item) => item.id === result.testCaseId);
@@ -192,9 +192,9 @@ function RunsView() {
                 <span>{testCase?.title}</span>
               </td>
               <td>
-                <Badge tone={statusTone(result.status)}>{result.status}</Badge>
+                <Badge tone={statusTone(result.status)}>{resultStatusLabel(result.status)}</Badge>
               </td>
-              <td>{result.runnerType}</td>
+              <td>{runnerTypeLabel(result.runnerType)}</td>
               <td>{result.actualResult}</td>
               <td>{result.commitSha}</td>
               <td>{result.retryCount}</td>
@@ -212,20 +212,20 @@ function DefectsView() {
       <div className="panel-heading">
         <div>
           <p>Quản lý lỗi</p>
-          <h2>Defect liên kết với kết quả Fail</h2>
+          <h2>Lỗi liên kết với kết quả không đạt</h2>
         </div>
         <Bug aria-hidden />
       </div>
       <DataTable
-        columns={['Mã lỗi', 'Tiêu đề', 'Severity', 'Priority', 'Status', 'Result']}
+        columns={['Mã lỗi', 'Tiêu đề', 'Mức độ', 'Ưu tiên', 'Trạng thái', 'Kết quả liên kết']}
         rows={defects}
         renderRow={(defect) => (
           <tr key={defect.id}>
             <td><strong>{defect.code}</strong></td>
             <td>{defect.title}</td>
-            <td><Badge tone="danger">{defect.severity}</Badge></td>
+            <td><Badge tone="danger">{severityLabel(defect.severity)}</Badge></td>
             <td>{defect.priority}</td>
-            <td><Badge tone="warning">{defect.status}</Badge></td>
+            <td><Badge tone="warning">{defectStatusLabel(defect.status)}</Badge></td>
             <td>{defect.linkedResultIds.join(', ')}</td>
           </tr>
         )}
@@ -241,17 +241,17 @@ function EvidenceView() {
         <div className="panel-heading">
           <div>
             <p>Minh chứng kỹ thuật</p>
-            <h2>Checksum, storage path và loại hiện vật</h2>
+            <h2>Mã kiểm tra, đường dẫn lưu trữ và loại hiện vật</h2>
           </div>
           <Archive aria-hidden />
         </div>
         <DataTable
-          columns={['File', 'Loại', 'Checksum', 'Storage path']}
+          columns={['Tệp', 'Loại', 'Mã kiểm tra', 'Đường dẫn lưu trữ']}
           rows={evidence}
           renderRow={(item) => (
             <tr key={item.id}>
               <td><strong>{item.fileName}</strong></td>
-              <td>{item.type}</td>
+              <td>{evidenceTypeLabel(item.type)}</td>
               <td>{item.checksum}</td>
               <td>{item.storagePath}</td>
             </tr>
@@ -262,19 +262,19 @@ function EvidenceView() {
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p>Audit log</p>
+            <p>Nhật ký kiểm toán</p>
             <h2>Truy nguyên thay đổi quan trọng</h2>
           </div>
           <ShieldCheck aria-hidden />
         </div>
         <DataTable
-          columns={['Thời điểm', 'Actor', 'Action', 'Entity']}
+          columns={['Thời điểm', 'Người/nguồn thực hiện', 'Hành động', 'Đối tượng']}
           rows={auditLogs}
           renderRow={(log) => (
             <tr key={log.id}>
               <td>{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
               <td>{log.actor}</td>
-              <td><Badge tone="info">{log.action}</Badge></td>
+              <td><Badge tone="info">{auditActionLabel(log.action)}</Badge></td>
               <td>{log.entity}:{log.entityId}</td>
             </tr>
           )}
@@ -288,4 +288,83 @@ function latestResultFor(testCase: TestCase): TestResult | undefined {
   return testResults
     .filter((result) => result.testCaseId === testCase.id)
     .sort((left, right) => new Date(right.executedAt).getTime() - new Date(left.executedAt).getTime())[0];
+}
+
+function resultStatusLabel(status: ResultStatus): string {
+  const labels: Record<ResultStatus, string> = {
+    Pass: 'Đạt',
+    Fail: 'Không đạt',
+    Blocked: 'Bị chặn',
+    'Not Run': 'Chưa chạy',
+    Flaky: 'Không ổn định',
+    'Infrastructure Error': 'Lỗi hạ tầng'
+  };
+  return labels[status];
+}
+
+function automationStatusLabel(status: TestCase['automationStatus']): string {
+  const labels: Record<TestCase['automationStatus'], string> = {
+    Automated: 'Đã tự động hóa',
+    Manual: 'Thủ công',
+    Candidate: 'Ứng viên tự động hóa',
+    Blocked: 'Bị chặn'
+  };
+  return labels[status];
+}
+
+function runnerTypeLabel(type: TestResult['runnerType']): string {
+  return type === 'automation' ? 'Tự động' : 'Thủ công';
+}
+
+function runStatusLabel(status: TestRun['status']): string {
+  const labels: Record<TestRun['status'], string> = {
+    Planning: 'Đang lập kế hoạch',
+    Running: 'Đang chạy',
+    Completed: 'Hoàn tất',
+    Locked: 'Đã khóa'
+  };
+  return labels[status];
+}
+
+function severityLabel(severity: Defect['severity']): string {
+  const labels: Record<Defect['severity'], string> = {
+    Critical: 'Nghiêm trọng',
+    High: 'Cao',
+    Medium: 'Trung bình',
+    Low: 'Thấp'
+  };
+  return labels[severity];
+}
+
+function defectStatusLabel(status: Defect['status']): string {
+  const labels: Record<Defect['status'], string> = {
+    Open: 'Mở',
+    'In Progress': 'Đang xử lý',
+    Fixed: 'Đã sửa',
+    Retest: 'Kiểm thử lại',
+    Closed: 'Đã đóng',
+    'Accepted Risk': 'Chấp nhận rủi ro'
+  };
+  return labels[status];
+}
+
+function evidenceTypeLabel(type: Evidence['type']): string {
+  const labels: Record<Evidence['type'], string> = {
+    screenshot: 'Ảnh chụp',
+    video: 'Video',
+    trace: 'Trace',
+    log: 'Log',
+    'html-report': 'Báo cáo HTML',
+    junit: 'JUnit'
+  };
+  return labels[type];
+}
+
+function auditActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    LOCK_TEST_RUN: 'Khóa đợt kiểm thử',
+    INGEST_AUTOMATION_RESULT: 'Nhận kết quả tự động',
+    CREATE_DEFECT: 'Tạo lỗi'
+  };
+  return labels[action] ?? action;
 }
