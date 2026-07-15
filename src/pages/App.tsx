@@ -133,7 +133,7 @@ function RtmView() {
       <div className="panel-heading">
         <div>
           <p>Requirement Traceability Matrix</p>
-          <h2>UC -> Scenario -> Test Case -> Script -> Result</h2>
+          <h2>UC / Scenario / Test Case / Script / Result</h2>
         </div>
         <FileCheck2 aria-hidden />
       </div>
