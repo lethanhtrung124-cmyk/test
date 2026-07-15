@@ -432,6 +432,56 @@ td span {
   gap: 10px;
 }
 
+.mode-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 480px;
+}
+
+.mode-switch button {
+  min-height: 40px;
+  border: 1px solid #ccd8d4;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #485653;
+  background: #fbfdfc;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mode-switch button.active,
+.mode-switch button:hover {
+  color: #eef7f4;
+  background: #117c6f;
+}
+
+.plain-text {
+  margin: 0;
+  color: #485653;
+  line-height: 1.6;
+}
+
+.automation-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.automation-flow span {
+  display: grid;
+  place-items: center;
+  min-height: 52px;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 8px;
+  color: #115e59;
+  background: #f0faf6;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .checkbox-list {
   display: grid;
   gap: 8px;
@@ -497,7 +547,8 @@ td span {
   .metrics-grid,
   .status-grid,
   .form-grid,
-  .management-grid {
+  .management-grid,
+  .automation-flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -523,7 +574,9 @@ td span {
   .status-grid,
   .form-grid,
   .management-grid,
-  .inline-fields {
+  .inline-fields,
+  .mode-switch,
+  .automation-flow {
     grid-template-columns: 1fr;
   }
 }

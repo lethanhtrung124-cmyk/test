@@ -176,7 +176,7 @@ export function App() {
             }}
             onAddResult={(row) => {
               setResultRows((current) => [row, ...current]);
-              addAudit('CREATE_MANUAL_RESULT', 'test_results', row.id);
+              addAudit(row.runnerType === 'automation' ? 'CREATE_AUTOMATION_RESULT' : 'CREATE_MANUAL_RESULT', 'test_results', row.id);
             }}
             onAddDefect={(row) => {
               setDefectRows((current) => [row, ...current]);
@@ -468,12 +468,15 @@ interface EntryViewProps {
 }
 
 function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
+  const [entryMode, setEntryMode] = useState<'manual' | 'automation'>('manual');
   const [projectForm, setProjectForm] = useState({ code: nextCode('PRJ-NEW', projects.length + 1), name: '', ownerUnit: '' });
   const [useCaseForm, setUseCaseForm] = useState({ code: nextCode('UC-NEW', useCases.length + 1), title: '', module: 'general' });
   const [testCaseForm, setTestCaseForm] = useState({ code: nextCode('TC-NEW', testCases.length + 1), title: '', useCaseId: useCases[0]?.id ?? '', expectedResult: '', steps: '', priority: 'P1' as TestCase['priority'], suite: 'functional' as TestCase['suite'], automationStatus: 'Manual' as TestCase['automationStatus'] });
   const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'], useCaseIds: useCases.map((useCase) => useCase.id) });
   const [resultForm, setResultForm] = useState({ testRunId: selectedRun?.id ?? testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
+  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:functional', retryPolicy: '1', note: '' });
+  const [automationMessage, setAutomationMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
 
@@ -549,6 +552,41 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     setDefectForm((current) => ({ ...current, title: '' }));
   }
 
+  function submitAutomation(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedProject || !selectedRun) {
+      setAutomationMessage('Cần tạo/chọn dự án và đợt kiểm thử trước khi chạy tự động.');
+      return;
+    }
+
+    const runCaseIds = getRunUseCaseIds(selectedRun, useCases);
+    const automatedCases = testCases.filter((testCase) =>
+      testCase.useCaseIds.some((useCaseId) => runCaseIds.includes(useCaseId))
+    );
+
+    if (automatedCases.length === 0) {
+      setAutomationMessage('Đợt kiểm thử đang chọn chưa có ca kiểm thử để chạy tự động.');
+      return;
+    }
+
+    automatedCases.forEach((testCase) => {
+      onAddResult({
+        id: createId('res-auto'),
+        testRunId: selectedRun.id,
+        testCaseId: testCase.id,
+        status: testCase.automationStatus === 'Blocked' ? 'Blocked' : 'Pass',
+        actualResult: `Đã mô phỏng chạy tự động trên ${automationForm.baseUrl || 'URL chưa cấu hình'} bằng ${automationForm.browser}. ${automationForm.note}`.trim(),
+        runnerType: 'automation',
+        commitSha: 'automation-local',
+        durationMs: 1200 + Math.round(Math.random() * 2500),
+        executedAt: new Date().toISOString(),
+        retryCount: Number.parseInt(automationForm.retryPolicy, 10) || 0
+      });
+    });
+
+    setAutomationMessage(`Đã tạo kết quả tự động cho ${automatedCases.length} ca kiểm thử trong đợt ${selectedRun.code}.`);
+  }
+
   async function importDocx(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || !selectedProject) return;
@@ -585,21 +623,21 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p>Nhập dữ liệu quản lý</p>
-            <h2>Dự án, đợt kiểm thử và phạm vi UC</h2>
+            <p>Quy trình nhập dữ liệu</p>
+            <h2>1. Dự án → 2. Đợt kiểm thử/kịch bản → 3. Thực hiện kiểm thử</h2>
           </div>
           <Database aria-hidden />
         </div>
         <div className="callout">
           <strong>Lưu ý:</strong>
-          <span>Dữ liệu demo lưu trong trình duyệt. Khi nối Supabase, các form này sẽ ghi vào cơ sở dữ liệu thật.</span>
+          <span>Hãy tạo hoặc chọn dự án trước, sau đó tạo đợt kiểm thử và gắn danh sách UC/kịch bản cho đợt đó.</span>
         </div>
         <button className="secondary-action" type="button" onClick={onReset}>Khôi phục dữ liệu mẫu</button>
       </section>
 
       <div className="form-grid">
         <form className="entry-form" onSubmit={submitProject}>
-          <h3>Thêm dự án</h3>
+          <h3>Bước 1 - Thêm dự án</h3>
           <label>Mã dự án<input value={projectForm.code} onChange={(event) => setProjectForm({ ...projectForm, code: event.target.value })} required /></label>
           <label>Tên dự án<input value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} required /></label>
           <label>Đơn vị quản lý<input value={projectForm.ownerUnit} onChange={(event) => setProjectForm({ ...projectForm, ownerUnit: event.target.value })} required /></label>
@@ -607,7 +645,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         </form>
 
         <form className="entry-form" onSubmit={submitRun}>
-          <h3>Tạo đợt kiểm thử</h3>
+          <h3>Bước 2 - Tạo đợt kiểm thử</h3>
           <label>Mã đợt kiểm thử<input value={runForm.code} onChange={(event) => setRunForm({ ...runForm, code: event.target.value })} required /></label>
           <label>Bộ kiểm thử<input value={runForm.suite} onChange={(event) => setRunForm({ ...runForm, suite: event.target.value })} required /></label>
           <label>Trạng thái<select value={runForm.status} onChange={(event) => setRunForm({ ...runForm, status: event.target.value as TestRun['status'] })}><option value="Planning">Đang lập kế hoạch</option><option value="Running">Đang chạy</option><option value="Completed">Hoàn tất</option><option value="Locked">Đã khóa</option></select></label>
@@ -637,6 +675,24 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
             </fieldset>
           </section>
         )}
+      </div>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Bước 3 - Chọn phương thức thực hiện</p>
+            <h2>Kiểm thử thủ công hoặc kiểm thử tự động</h2>
+          </div>
+          <PlayCircle aria-hidden />
+        </div>
+        <div className="mode-switch" role="tablist" aria-label="Phương thức kiểm thử">
+          <button type="button" className={entryMode === 'manual' ? 'active' : ''} onClick={() => setEntryMode('manual')}>Kiểm thử thủ công</button>
+          <button type="button" className={entryMode === 'automation' ? 'active' : ''} onClick={() => setEntryMode('automation')}>Kiểm thử tự động</button>
+        </div>
+      </section>
+
+      {entryMode === 'manual' && (
+        <div className="form-grid">
 
         <form className="entry-form" onSubmit={submitUseCase}>
           <h3>Thêm UC cho dự án đang chọn</h3>
@@ -671,7 +727,38 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           <label>Tiêu đề lỗi<input value={defectForm.title} onChange={(event) => setDefectForm({ ...defectForm, title: event.target.value })} required /></label>
           <button type="submit">Tạo lỗi</button>
         </form>
-      </div>
+        </div>
+      )}
+
+      {entryMode === 'automation' && (
+        <div className="form-grid">
+          <form className="entry-form" onSubmit={submitAutomation}>
+            <h3>Yêu cầu chạy kiểm thử tự động</h3>
+            <label>URL hệ thống cần kiểm thử<input value={automationForm.baseUrl} onChange={(event) => setAutomationForm({ ...automationForm, baseUrl: event.target.value })} placeholder="https://uat.example.vn" required /></label>
+            <label>Vai trò/tài khoản dùng để kiểm thử<input value={automationForm.accountRole} onChange={(event) => setAutomationForm({ ...automationForm, accountRole: event.target.value })} /></label>
+            <div className="inline-fields">
+              <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
+              <label>Số lần chạy lại<input type="number" min="0" max="3" value={automationForm.retryPolicy} onChange={(event) => setAutomationForm({ ...automationForm, retryPolicy: event.target.value })} /></label>
+            </div>
+            <label>Tag/bộ script<input value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })} /></label>
+            <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
+            <button type="submit">Chạy tự động và nhận kết quả</button>
+            {automationMessage && <p className="form-note">{automationMessage}</p>}
+          </form>
+
+          <section className="entry-form">
+            <h3>Mô hình tự động hóa</h3>
+            <p className="plain-text">Luồng tự động sẽ lấy dự án và đợt kiểm thử đang chọn, đọc danh sách UC trong phạm vi đợt, tìm các ca kiểm thử liên quan, chạy script Playwright theo tag, sau đó ghi Pass/Fail/Blocked và minh chứng về hệ thống.</p>
+            <div className="automation-flow">
+              <span>Dự án</span>
+              <span>Đợt kiểm thử</span>
+              <span>UC trong phạm vi</span>
+              <span>Script Playwright</span>
+              <span>Kết quả & minh chứng</span>
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="panel">
         <div className="panel-heading">
@@ -812,6 +899,7 @@ function auditActionLabel(action: string): string {
     CREATE_TEST_RUN: 'Tạo đợt kiểm thử',
     UPDATE_TEST_RUN_SCOPE: 'Cập nhật phạm vi UC',
     CREATE_MANUAL_RESULT: 'Ghi kết quả thủ công',
+    CREATE_AUTOMATION_RESULT: 'Ghi kết quả tự động',
     LOCK_TEST_RUN: 'Khóa đợt kiểm thử',
     INGEST_AUTOMATION_RESULT: 'Nhận kết quả tự động',
     CREATE_DEFECT: 'Tạo lỗi'
