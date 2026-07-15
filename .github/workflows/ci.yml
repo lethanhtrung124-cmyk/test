@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      test_run_id:
+        description: Test Run ID
+        required: false
+        default: RUN-20260715-001
+      base_url:
+        description: Target base URL
+        required: false
+        default: http://127.0.0.1:4173
+      suite:
+        description: Playwright grep tag, for example @suite:smoke
+        required: false
+        default: ""
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    env:
+      TEST_RUN_ID: ${{ inputs.test_run_id || 'RUN-20260715-001' }}
+      TEST_BASE_URL: ${{ inputs.base_url || 'http://127.0.0.1:4173' }}
+      PROJECT_CODE: KTKT
+      ENVIRONMENT_CODE: UAT
+      APPLICATION_VERSION: v2.0.0
+      RESULTS_INGEST_URL: ${{ secrets.RESULTS_INGEST_URL }}
+      RESULTS_INGEST_TOKEN: ${{ secrets.RESULTS_INGEST_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        run: |
+          if [ -n "${{ inputs.suite }}" ]; then
+            npx playwright test --grep "${{ inputs.suite }}"
+          else
+            npx playwright test
+          fi
+
+      - run: npm run report:results
+        if: always()
+
+      - run: npm run publish:results
+        if: always()
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-evidence
+          path: |
+            playwright-report
+            test-results
