@@ -10,7 +10,7 @@ import {
   PlayCircle,
   ShieldCheck
 } from 'lucide-react';
-import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useState } from 'react';
 import { Badge } from '../components/Badge';
 import { DataTable } from '../components/DataTable';
 import { MetricCard } from '../components/MetricCard';
@@ -365,6 +365,7 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
   const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'] });
   const [resultForm, setResultForm] = useState({ testRunId: testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
+  const [importMessage, setImportMessage] = useState('');
 
   function submitUseCase(event: FormEvent) {
     event.preventDefault();
@@ -458,6 +459,58 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
     setDefectForm((current) => ({ ...current, title: '' }));
   }
 
+  async function importDocx(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const mammoth = await import('mammoth/mammoth.browser');
+      const arrayBuffer = await file.arrayBuffer();
+      const extracted = await mammoth.extractRawText({ arrayBuffer });
+      const importedCases = parseImportedTestCases(extracted.value);
+
+      if (importedCases.length === 0) {
+        setImportMessage('Không tìm thấy mã kịch bản dạng TCs_... trong file Word.');
+        return;
+      }
+
+      let importedCount = 0;
+      const useCaseCache = [...useCases];
+      for (const importedCase of importedCases) {
+        const targetUseCase = findOrCreateUseCaseForImport(useCaseCache, importedCase.moduleTitle, onAddUseCase);
+        const scenario: TestScenario = {
+          id: createId('ts'),
+          useCaseId: targetUseCase.id,
+          code: nextCode('TS-IMP', Date.now() % 1000),
+          title: importedCase.title,
+          type: 'positive'
+        };
+
+        onAddTestCase(
+          {
+            id: createId('tc'),
+            code: importedCase.id,
+            scenarioId: scenario.id,
+            useCaseIds: [targetUseCase.id],
+            title: importedCase.title,
+            priority: 'P1',
+            suite: 'functional',
+            automationStatus: 'Manual',
+            expectedResult: importedCase.expectedResult,
+            steps: importedCase.steps
+          },
+          scenario
+        );
+        importedCount += 1;
+      }
+
+      setImportMessage(`Đã import ${importedCount} ca kiểm thử từ file ${file.name}.`);
+      event.target.value = '';
+    } catch (error) {
+      setImportMessage(`Không import được file Word: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
+    }
+  }
+
   return (
     <div className="stack">
       <section className="panel">
@@ -473,6 +526,21 @@ function EntryView({ useCases, testCases, testRuns, results, onAddUseCase, onAdd
           <span>Dữ liệu nhập ở bản demo được lưu trong trình duyệt của bạn. Khi nối Supabase, các form này sẽ ghi vào cơ sở dữ liệu thật.</span>
         </div>
         <button className="secondary-action" type="button" onClick={onReset}>Khôi phục dữ liệu mẫu</button>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Import kịch bản Word</p>
+            <h2>Tải file .docx có mã TCs_... để tạo ca kiểm thử</h2>
+          </div>
+          <FileCheck2 aria-hidden />
+        </div>
+        <label className="file-import">
+          <span>Chọn file kịch bản kiểm thử Word</span>
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
+        </label>
+        {importMessage && <p className="form-note">{importMessage}</p>}
       </section>
 
       <div className="form-grid">
@@ -550,6 +618,85 @@ function createId(prefix: string): string {
 
 function nextCode(prefix: string, value: number): string {
   return `${prefix}-${String(value).padStart(3, '0')}`;
+}
+
+interface ImportedTestCase {
+  id: string;
+  moduleTitle: string;
+  title: string;
+  steps: string[];
+  expectedResult: string;
+}
+
+function parseImportedTestCases(rawText: string): ImportedTestCase[] {
+  const lines = rawText
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const cases: ImportedTestCase[] = [];
+  let currentModule = 'Kịch bản import từ Word';
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^(I|II|III|IV|V|\d+)\./.test(line) && !/^TCs?[_-]/i.test(line)) {
+      currentModule = line.replace(/\s*\|?\s*$/g, '');
+      continue;
+    }
+
+    const match = line.match(/^(TCs?[_-]?\d+)\b/i);
+    if (!match) continue;
+
+    const id = normalizeImportedCaseId(match[1]);
+    const title = cleanCell(lines[index + 1] ?? id);
+    const steps = splitNumberedSteps(cleanCell(lines[index + 2] ?? ''));
+    const expectedResult = cleanCell(lines[index + 3] ?? '');
+
+    cases.push({
+      id,
+      moduleTitle: currentModule,
+      title,
+      steps,
+      expectedResult
+    });
+  }
+
+  return cases;
+}
+
+function findOrCreateUseCaseForImport(cache: UseCase[], moduleTitle: string, onAddUseCase: (row: UseCase) => void): UseCase {
+  const existing = cache.find((row) => row.title === moduleTitle);
+  if (existing) return existing;
+
+  const row: UseCase = {
+    id: createId('uc-import'),
+    projectId: projects[0].id,
+    code: nextCode('UC-IMP', cache.length + 1),
+    title: moduleTitle,
+    module: 'import-word',
+    approvedVersion: '1.0',
+    status: 'Approved'
+  };
+  cache.push(row);
+  onAddUseCase(row);
+  return row;
+}
+
+function normalizeImportedCaseId(value: string): string {
+  return value.replace(/^TCs?/i, 'TC').replace(/_/g, '-').toUpperCase();
+}
+
+function cleanCell(value: string): string {
+  return value.replace(/\s*\|\s*$/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function splitNumberedSteps(value: string): string[] {
+  const parts = value
+    .split(/(?=\b\d+\.\s*)/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [value];
 }
 
 function latestResultFor(testCase: TestCase, results: TestResult[]): TestResult | undefined {

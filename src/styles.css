@@ -379,6 +379,28 @@ td span {
   gap: 10px;
 }
 
+.file-import {
+  display: grid;
+  gap: 8px;
+  max-width: 520px;
+  color: #485653;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.file-import input {
+  border: 1px dashed #9bb0aa;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfdfc;
+}
+
+.form-note {
+  margin: 12px 0 0;
+  color: #115e59;
+  font-weight: 800;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
