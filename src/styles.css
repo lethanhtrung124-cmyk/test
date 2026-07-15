@@ -306,6 +306,79 @@ td span {
   background: #f0faf6;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.entry-form {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(36, 50, 45, 0.06);
+}
+
+.entry-form h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.entry-form label {
+  display: grid;
+  gap: 6px;
+  color: #485653;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.entry-form input,
+.entry-form select,
+.entry-form textarea {
+  width: 100%;
+  border: 1px solid #ccd8d4;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #16211f;
+  background: #fbfdfc;
+  font: inherit;
+}
+
+.entry-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.entry-form button,
+.secondary-action {
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #eef7f4;
+  background: #117c6f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.entry-form button:hover,
+.secondary-action:hover {
+  background: #0e665c;
+}
+
+.secondary-action {
+  width: fit-content;
+}
+
+.inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -324,7 +397,8 @@ td span {
   }
 
   .metrics-grid,
-  .status-grid {
+  .status-grid,
+  .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -346,7 +420,9 @@ td span {
   }
 
   .metrics-grid,
-  .status-grid {
+  .status-grid,
+  .form-grid,
+  .inline-fields {
     grid-template-columns: 1fr;
   }
 }
