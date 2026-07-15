@@ -11,6 +11,15 @@ export interface CoverageMetrics {
 
 const statuses: ResultStatus[] = ['Pass', 'Fail', 'Blocked', 'Not Run', 'Flaky', 'Infrastructure Error'];
 
+const statusToneMap: Record<ResultStatus, BadgeTone> = {
+  Pass: 'success',
+  Fail: 'danger',
+  Blocked: 'warning',
+  'Not Run': 'neutral',
+  Flaky: 'info',
+  'Infrastructure Error': 'danger'
+};
+
 export function calculateMetrics(useCases: UseCase[], testCases: TestCase[], results: TestResult[]): CoverageMetrics {
   const coveredUcIds = new Set(testCases.flatMap((testCase) => testCase.useCaseIds));
   const executedResults = results.filter((result) => result.status !== 'Not Run');
@@ -35,12 +44,5 @@ export function ratio(part: number, whole: number): number {
 }
 
 export function statusTone(status: ResultStatus): BadgeTone {
-  return {
-    Pass: 'success',
-    Fail: 'danger',
-    Blocked: 'warning',
-    'Not Run': 'neutral',
-    Flaky: 'info',
-    'Infrastructure Error': 'danger'
-  }[status];
+  return statusToneMap[status];
 }
