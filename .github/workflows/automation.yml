@@ -1,6 +1,10 @@
 name: Automation Runner
 
-on:
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/automation.yml"
   workflow_dispatch:
     inputs:
       test_run_id:
