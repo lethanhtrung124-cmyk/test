@@ -596,7 +596,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       const extracted = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
       const importedCases = parseImportedTestCases(extracted.value);
       if (importedCases.length === 0) {
-        setImportMessage('Không tìm thấy mã kịch bản dạng TCs_... trong file Word.');
+        setImportMessage('Không tìm thấy UC/ca kiểm thử trong file Word. Hệ thống nhận dạng các mã như UC.016, [UC.016-1] hoặc TCs_001.');
         return;
       }
 
@@ -604,14 +604,15 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       const importedUseCaseIds = new Set<string>();
       let importedCount = 0;
       for (const importedCase of importedCases) {
-        const targetUseCase = findOrCreateUseCaseForImport(useCaseCache, selectedProject.id, importedCase.moduleTitle, onAddUseCase);
+        const targetUseCase = findOrCreateUseCaseForImport(useCaseCache, selectedProject.id, importedCase.moduleTitle, onAddUseCase, importedCase.useCaseCode);
         importedUseCaseIds.add(targetUseCase.id);
         const scenario = { id: createId('ts'), useCaseId: targetUseCase.id, code: nextCode('TS-IMP', Date.now() % 1000), title: importedCase.title, type: 'positive' as const };
         onAddTestCase({ id: createId('tc'), code: importedCase.id, scenarioId: scenario.id, useCaseIds: [targetUseCase.id], title: importedCase.title, priority: 'P1', suite: 'functional', automationStatus: 'Manual', expectedResult: importedCase.expectedResult, steps: importedCase.steps }, scenario);
         importedCount += 1;
       }
       if (selectedRun) onUpdateRunScope(selectedRun.id, [...new Set([...scopedRunIds, ...importedUseCaseIds])]);
-      setImportMessage(`Đã import ${importedCount} ca kiểm thử từ file ${file.name}.`);
+      setRunForm((current) => ({ ...current, useCaseIds: [...new Set([...current.useCaseIds, ...importedUseCaseIds])] }));
+      setImportMessage(`Đã import ${importedUseCaseIds.size} UC và ${importedCount} ca kiểm thử từ file ${file.name}.`);
       event.target.value = '';
     } catch (error) {
       setImportMessage(`Không import được file Word: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
@@ -624,7 +625,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         <div className="panel-heading">
           <div>
             <p>Quy trình nhập dữ liệu</p>
-            <h2>1. Dự án → 2. Đợt kiểm thử/kịch bản → 3. Thực hiện kiểm thử</h2>
+            <h2>1. Dự án → 2. Đợt kiểm thử/DS UC → 3. Kịch bản/ca kiểm thử → 4. Thực hiện</h2>
           </div>
           <Database aria-hidden />
         </div>
@@ -658,6 +659,11 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               </label>
             ))}
           </fieldset>
+          <label className="file-import compact">
+            <span>Đính kèm danh sách UC/kịch bản Word cho đợt này</span>
+            <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
+          </label>
+          {importMessage && <p className="form-note">{importMessage}</p>}
           <button type="submit">Tạo đợt kiểm thử</button>
         </form>
 
@@ -680,20 +686,19 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p>Bước 3 - Chọn phương thức thực hiện</p>
-            <h2>Kiểm thử thủ công hoặc kiểm thử tự động</h2>
+            <p>Bước 3 - Chuẩn bị kịch bản/ca kiểm thử</p>
+            <h2>Nhập UC, ca kiểm thử hoặc import từ file Word mẫu</h2>
           </div>
-          <PlayCircle aria-hidden />
+          <FileCheck2 aria-hidden />
         </div>
-        <div className="mode-switch" role="tablist" aria-label="Phương thức kiểm thử">
-          <button type="button" className={entryMode === 'manual' ? 'active' : ''} onClick={() => setEntryMode('manual')}>Kiểm thử thủ công</button>
-          <button type="button" className={entryMode === 'automation' ? 'active' : ''} onClick={() => setEntryMode('automation')}>Kiểm thử tự động</button>
-        </div>
+        <label className="file-import">
+          <span>Import file .docx có cấu trúc UC.016, [UC.016-1], bước thực hiện và kết quả mong đợi</span>
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
+        </label>
+        {importMessage && <p className="form-note">{importMessage}</p>}
       </section>
 
-      {entryMode === 'manual' && (
-        <div className="form-grid">
-
+      <div className="form-grid">
         <form className="entry-form" onSubmit={submitUseCase}>
           <h3>Thêm UC cho dự án đang chọn</h3>
           <label>Mã UC<input value={useCaseForm.code} onChange={(event) => setUseCaseForm({ ...useCaseForm, code: event.target.value })} required /></label>
@@ -711,7 +716,24 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           <label>Các bước thực hiện<textarea value={testCaseForm.steps} onChange={(event) => setTestCaseForm({ ...testCaseForm, steps: event.target.value })} placeholder="Mỗi dòng là một bước" /></label>
           <button type="submit">Lưu ca kiểm thử</button>
         </form>
+      </div>
 
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Bước 4 - Chọn phương thức thực hiện</p>
+            <h2>Kiểm thử thủ công hoặc kiểm thử tự động</h2>
+          </div>
+          <PlayCircle aria-hidden />
+        </div>
+        <div className="mode-switch" role="tablist" aria-label="Phương thức kiểm thử">
+          <button type="button" className={entryMode === 'manual' ? 'active' : ''} onClick={() => setEntryMode('manual')}>Kiểm thử thủ công</button>
+          <button type="button" className={entryMode === 'automation' ? 'active' : ''} onClick={() => setEntryMode('automation')}>Kiểm thử tự động</button>
+        </div>
+      </section>
+
+      {entryMode === 'manual' && (
+        <div className="form-grid">
         <form className="entry-form" onSubmit={submitResult}>
           <h3>Ghi kết quả thủ công</h3>
           <label>Đợt kiểm thử<select value={resultForm.testRunId} onChange={(event) => setResultForm({ ...resultForm, testRunId: event.target.value })} required>{testRuns.map((run) => <option key={run.id} value={run.id}>{run.code}</option>)}</select></label>
@@ -761,20 +783,6 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         </div>
       )}
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p>Import kịch bản Word</p>
-            <h2>Tải file .docx có mã TCs_... để tạo ca kiểm thử</h2>
-          </div>
-          <FileCheck2 aria-hidden />
-        </div>
-        <label className="file-import">
-          <span>File sẽ được import vào dự án và đợt kiểm thử đang chọn</span>
-          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
-        </label>
-        {importMessage && <p className="form-note">{importMessage}</p>}
-      </section>
     </div>
   );
 }
@@ -814,6 +822,7 @@ function nextCode(prefix: string, value: number): string {
 
 interface ImportedTestCase {
   id: string;
+  useCaseCode?: string;
   moduleTitle: string;
   title: string;
   steps: string[];
@@ -824,31 +833,51 @@ function parseImportedTestCases(rawText: string): ImportedTestCase[] {
   const lines = rawText.replace(/\r/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean);
   const cases: ImportedTestCase[] = [];
   let currentModule = 'Kịch bản import từ Word';
+  let currentUseCaseCode = '';
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    const useCaseMatch = line.match(/^(UC\.\d+)\s*[-–]\s*(.+)$/i);
+    if (useCaseMatch) {
+      currentUseCaseCode = useCaseMatch[1].toUpperCase();
+      currentModule = cleanCell(useCaseMatch[2]);
+      continue;
+    }
     if (/^(I|II|III|IV|V|\d+)\./.test(line) && !/^TCs?[_-]/i.test(line)) {
       currentModule = cleanCell(line);
       continue;
     }
-    const match = line.match(/^(TCs?[_-]?\d+)\b/i);
-    if (!match) continue;
-    cases.push({ id: normalizeImportedCaseId(match[1]), moduleTitle: currentModule, title: cleanCell(lines[index + 1] ?? match[1]), steps: splitNumberedSteps(cleanCell(lines[index + 2] ?? '')), expectedResult: cleanCell(lines[index + 3] ?? '') });
+    const bracketMatch = line.match(/^\[(UC\.\d+\s*[-–]?\s*\d+)\]$/i);
+    const tcMatch = line.match(/^(TCs?[_-]?\d+)\b/i);
+    if (!bracketMatch && !tcMatch) continue;
+
+    const rawId = bracketMatch?.[1] ?? tcMatch?.[1] ?? '';
+    const bracketUseCaseCode = bracketMatch ? bracketMatch[1].match(/^(UC\.\d+)/i)?.[1].toUpperCase() : '';
+    const useCaseCode = bracketUseCaseCode || currentUseCaseCode;
+    cases.push({
+      id: normalizeImportedCaseId(rawId),
+      useCaseCode,
+      moduleTitle: currentModule,
+      title: cleanCell(lines[index + 1] ?? rawId),
+      steps: splitNumberedSteps(cleanCell(lines[index + 2] ?? '')),
+      expectedResult: cleanCell(lines[index + 3] ?? '')
+    });
   }
   return cases;
 }
 
-function findOrCreateUseCaseForImport(cache: UseCase[], projectId: string, moduleTitle: string, onAddUseCase: (row: UseCase) => void): UseCase {
-  const existing = cache.find((row) => row.projectId === projectId && row.title === moduleTitle);
+function findOrCreateUseCaseForImport(cache: UseCase[], projectId: string, moduleTitle: string, onAddUseCase: (row: UseCase) => void, useCaseCode?: string): UseCase {
+  const normalizedCode = useCaseCode?.replace(/\s+/g, '').toUpperCase();
+  const existing = cache.find((row) => row.projectId === projectId && (row.title === moduleTitle || (normalizedCode && row.code === normalizedCode)));
   if (existing) return existing;
-  const row = { id: createId('uc-import'), projectId, code: nextCode('UC-IMP', cache.filter((item) => item.projectId === projectId).length + 1), title: moduleTitle, module: 'import-word', approvedVersion: '1.0', status: 'Approved' as const };
+  const row = { id: createId('uc-import'), projectId, code: normalizedCode || nextCode('UC-IMP', cache.filter((item) => item.projectId === projectId).length + 1), title: moduleTitle, module: 'import-word', approvedVersion: '1.0', status: 'Approved' as const };
   cache.push(row);
   onAddUseCase(row);
   return row;
 }
 
 function normalizeImportedCaseId(value: string): string {
-  return value.replace(/^TCs?/i, 'TC').replace(/_/g, '-').toUpperCase();
+  return value.replace(/^TCs?/i, 'TC').replace(/\s+/g, '').replace(/_/g, '-').toUpperCase();
 }
 
 function cleanCell(value: string): string {

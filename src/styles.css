@@ -523,6 +523,18 @@ td span {
   background: #fbfdfc;
 }
 
+.file-import.compact {
+  max-width: none;
+  padding: 10px;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  background: #f6fbf9;
+}
+
+.file-import.compact input {
+  padding: 10px;
+}
+
 .form-note {
   margin: 12px 0 0;
   color: #115e59;
