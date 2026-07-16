@@ -13,11 +13,11 @@ const results = report.suites.flatMap((suite) =>
   suite.specs.flatMap((spec) =>
     spec.tests.map((testCase) => {
       const latest = testCase.results[testCase.results.length - 1];
-      const ids = spec.title.match(/(UC-[A-Z]+-\d+).*(TC-[A-Z]+-\d+)/);
+      const ids = spec.title.match(/(UC(?:[.-][A-Z0-9]+)+).*?((?:TC|GD)(?:[.-][A-Z0-9]+)+)/i);
       return {
         title: spec.title,
-        useCaseCode: ids?.[1],
-        testCaseCode: ids?.[2],
+        useCaseCode: ids?.[1]?.toUpperCase(),
+        testCaseCode: ids?.[2]?.toUpperCase(),
         status: normalizeStatus(latest.status),
         durationMs: latest.duration,
         retryCount: latest.retry,

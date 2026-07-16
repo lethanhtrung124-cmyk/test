@@ -554,7 +554,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     setDefectForm((current) => ({ ...current, title: '' }));
   }
 
-  function submitAutomation(event: FormEvent) {
+  async function submitAutomation(event: FormEvent) {
     event.preventDefault();
     if (!selectedProject || !selectedRun) {
       setAutomationMessage('Cần tạo/chọn dự án và đợt kiểm thử trước khi chạy tự động.');
@@ -571,22 +571,37 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       return;
     }
 
-    automatedCases.forEach((testCase) => {
-      onAddResult({
-        id: createId('res-auto'),
-        testRunId: selectedRun.id,
-        testCaseId: testCase.id,
-        status: testCase.automationStatus === 'Blocked' ? 'Blocked' : 'Pass',
-        actualResult: `Đã mô phỏng chạy tự động trên ${automationForm.baseUrl || 'URL chưa cấu hình'} bằng ${automationForm.browser}. ${automationForm.note}`.trim(),
-        runnerType: 'automation',
-        commitSha: 'automation-local',
-        durationMs: 1200 + Math.round(Math.random() * 2500),
-        executedAt: new Date().toISOString(),
-        retryCount: Number.parseInt(automationForm.retryPolicy, 10) || 0
-      });
-    });
+    setAutomationMessage('Đang gửi yêu cầu chạy Playwright lên GitHub Actions...');
 
-    setAutomationMessage(`Đã tạo kết quả tự động cho ${automatedCases.length} giao dịch kiểm thử trong đợt ${selectedRun.code}.`);
+    try {
+      const response = await fetch('/.netlify/functions/run-automation', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          projectCode: selectedProject.code,
+          testRunId: selectedRun.id,
+          testRunCode: selectedRun.code,
+          baseUrl: automationForm.baseUrl,
+          accountRole: automationForm.accountRole,
+          password: automationForm.password,
+          browser: automationForm.browser,
+          suiteTag: automationForm.suiteTag,
+          retryPolicy: automationForm.retryPolicy,
+          transactionCodes: automatedCases.map((testCase) => testCase.code)
+        })
+      });
+      const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; error?: string; detail?: string; requiredEnv?: string[] };
+
+      if (!response.ok) {
+        const requiredEnv = payload.requiredEnv?.length ? ` Cần cấu hình Netlify env: ${payload.requiredEnv.join(', ')}.` : '';
+        setAutomationMessage(`Chưa gửi được yêu cầu chạy thật: ${payload.error ?? response.statusText}.${requiredEnv}`);
+        return;
+      }
+
+      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length} giao dịch. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
+    } catch (error) {
+      setAutomationMessage(`Không gọi được automation runner: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
+    }
   }
 
   async function importDocx(event: ChangeEvent<HTMLInputElement>) {
@@ -774,13 +789,13 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
             </div>
             <label>Tag/bộ script<input value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })} /></label>
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
-            <button type="submit">Chạy tự động và nhận kết quả</button>
+            <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}
           </form>
 
           <section className="entry-form">
             <h3>Mô hình tự động hóa</h3>
-            <p className="plain-text">Luồng tự động sẽ lấy dự án và đợt kiểm thử đang chọn, đọc danh sách UC trong phạm vi đợt, tìm các giao dịch kiểm thử liên quan, chạy script Playwright theo tag, sau đó ghi Pass/Fail/Blocked và minh chứng về hệ thống.</p>
+            <p className="plain-text">Luồng tự động sẽ gửi yêu cầu sang GitHub Actions, chạy Playwright theo URL, tài khoản, trình duyệt và tag script. Sau khi chạy, GitHub Actions sinh JUnit, HTML report, screenshot, video và trace trong artifact.</p>
             <div className="automation-flow">
               <span>Dự án</span>
               <span>Đợt kiểm thử</span>

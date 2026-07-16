@@ -1,0 +1,86 @@
+name: Automation Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_run_id:
+        description: Test run code/id from the platform
+        required: true
+      base_url:
+        description: Target application URL
+        required: true
+      suite:
+        description: Playwright grep tag, for example @suite:functional
+        required: false
+        default: ""
+      browser:
+        description: Playwright project: chromium, firefox, webkit, mobile-chrome
+        required: false
+        default: chromium
+      account_role:
+        description: Test account username or role
+        required: false
+        default: ""
+      password:
+        description: Test account password
+        required: false
+        default: ""
+      project_code:
+        description: Project code from the platform
+        required: false
+        default: KTKT
+      transaction_codes:
+        description: Comma-separated transaction codes selected in the run
+        required: false
+        default: ""
+
+jobs:
+  automation:
+    runs-on: ubuntu-latest
+    env:
+      TEST_RUN_ID: ${{ inputs.test_run_id }}
+      TEST_BASE_URL: ${{ inputs.base_url }}
+      TEST_USERNAME: ${{ inputs.account_role || secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ inputs.password || secrets.TEST_PASSWORD }}
+      PROJECT_CODE: ${{ inputs.project_code }}
+      TARGET_TRANSACTION_CODES: ${{ inputs.transaction_codes }}
+      ENVIRONMENT_CODE: UAT
+      APPLICATION_VERSION: v2.0.0
+      RESULTS_INGEST_URL: ${{ secrets.RESULTS_INGEST_URL }}
+      RESULTS_INGEST_TOKEN: ${{ secrets.RESULTS_INGEST_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run Playwright automation
+        run: |
+          PROJECT_ARG="--project=${{ inputs.browser }}"
+          if [ -n "${{ inputs.suite }}" ]; then
+            npx playwright test tests/target-app/specs $PROJECT_ARG --grep "${{ inputs.suite }}"
+          else
+            npx playwright test tests/target-app/specs $PROJECT_ARG
+          fi
+
+      - run: npm run report:results
+        if: always()
+
+      - run: npm run publish:results
+        if: always()
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-evidence-${{ inputs.test_run_id }}
+          path: |
+            playwright-report
+            test-results
