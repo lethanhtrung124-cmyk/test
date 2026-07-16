@@ -239,8 +239,8 @@ function OverviewView({ project, run, useCases, allProjectUseCases, testCases, m
     <div className="stack">
       <div className="metrics-grid">
         <MetricCard label="UC trong đợt" value={`${useCases.length}`} hint={`${allProjectUseCases.length} UC của dự án`} icon={<ListChecks size={22} />} />
-        <MetricCard label="Ca kiểm thử" value={`${testCases.length}`} hint="Theo phạm vi UC đã chọn" icon={<FileCheck2 size={22} />} />
-        <MetricCard label="Độ phủ UC" value={`${metrics.ucCoverage}%`} hint="UC có ca kiểm thử liên kết" icon={<CheckCircle2 size={22} />} />
+        <MetricCard label="Giao dịch kiểm thử" value={`${testCases.length}`} hint="Theo phạm vi UC đã chọn" icon={<FileCheck2 size={22} />} />
+        <MetricCard label="Độ phủ UC" value={`${metrics.ucCoverage}%`} hint="UC có giao dịch liên kết" icon={<CheckCircle2 size={22} />} />
         <MetricCard label="Tỷ lệ đạt" value={`${metrics.passRate}%`} hint="Trong đợt đang chọn" icon={<PlayCircle size={22} />} />
       </div>
 
@@ -304,12 +304,12 @@ function RtmView({ useCases, scenarios, testCases, results }: { useCases: UseCas
       <div className="panel-heading">
         <div>
           <p>Ma trận truy vết yêu cầu</p>
-          <h2>UC / Tình huống / Ca kiểm thử / Kết quả trong đợt</h2>
+          <h2>UC / Tình huống / Giao dịch kiểm thử / Kết quả trong đợt</h2>
         </div>
         <FileCheck2 aria-hidden />
       </div>
       <DataTable
-        columns={['UC', 'Tình huống', 'Ca kiểm thử', 'Tự động hóa', 'Kết quả mới nhất']}
+        columns={['UC', 'Tình huống', 'Giao dịch', 'Tự động hóa', 'Kết quả mới nhất']}
         rows={testCases}
         renderRow={(testCase) => {
           const useCaseCodes = testCase.useCaseIds.map((id) => useCases.find((item) => item.id === id)?.code).filter(Boolean).join(', ');
@@ -348,7 +348,7 @@ function RunsView({ testCases, results }: { testCases: TestCase[]; results: Test
         <PlayCircle aria-hidden />
       </div>
       <DataTable
-        columns={['Ca kiểm thử', 'Trạng thái', 'Cách chạy', 'Kết quả thực tế', 'Commit', 'Số lần chạy lại']}
+        columns={['Giao dịch kiểm thử', 'Trạng thái', 'Cách chạy', 'Kết quả thực tế', 'Commit', 'Số lần chạy lại']}
         rows={results}
         renderRow={(result) => {
           const testCase = testCases.find((item) => item.id === result.testCaseId);
@@ -470,8 +470,8 @@ interface EntryViewProps {
 function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
   const [entryMode, setEntryMode] = useState<'manual' | 'automation'>('manual');
   const [projectForm, setProjectForm] = useState({ code: nextCode('PRJ-NEW', projects.length + 1), name: '', ownerUnit: '' });
-  const [useCaseForm, setUseCaseForm] = useState({ code: nextCode('UC-NEW', useCases.length + 1), title: '', module: 'general' });
-  const [testCaseForm, setTestCaseForm] = useState({ code: nextCode('TC-NEW', testCases.length + 1), title: '', useCaseId: useCases[0]?.id ?? '', expectedResult: '', steps: '', priority: 'P1' as TestCase['priority'], suite: 'functional' as TestCase['suite'], automationStatus: 'Manual' as TestCase['automationStatus'] });
+  const [useCaseForm, setUseCaseForm] = useState({ code: '', title: '', module: 'general' });
+  const [testCaseForm, setTestCaseForm] = useState({ code: '', title: '', useCaseId: useCases[0]?.id ?? '', expectedResult: '', steps: '', priority: 'P1' as TestCase['priority'], suite: 'functional' as TestCase['suite'], automationStatus: 'Manual' as TestCase['automationStatus'] });
   const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'], useCaseIds: useCases.map((useCase) => useCase.id) });
   const [resultForm, setResultForm] = useState({ testRunId: selectedRun?.id ?? testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
@@ -489,10 +489,11 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   function submitUseCase(event: FormEvent) {
     event.preventDefault();
     if (!selectedProject) return;
+    const nextUseCaseCode = useCaseForm.code.trim() || nextCode('UC-NEW', useCases.length + 1);
     const row = {
       id: createId('uc'),
       projectId: selectedProject.id,
-      code: useCaseForm.code.trim(),
+      code: nextUseCaseCode,
       title: useCaseForm.title.trim(),
       module: useCaseForm.module.trim(),
       approvedVersion: '1.0',
@@ -500,15 +501,16 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     };
     onAddUseCase(row);
     if (selectedRun) onUpdateRunScope(selectedRun.id, [...new Set([...scopedRunIds, row.id])]);
-    setUseCaseForm({ code: nextCode('UC-NEW', useCases.length + 2), title: '', module: 'general' });
+    setUseCaseForm({ code: '', title: '', module: 'general' });
   }
 
   function submitTestCase(event: FormEvent) {
     event.preventDefault();
-    const scenario = { id: createId('ts'), useCaseId: testCaseForm.useCaseId, code: nextCode('TS-NEW', Date.now() % 1000), title: `Tình huống cho ${testCaseForm.code}`, type: 'positive' as const };
+    const nextTransactionCode = testCaseForm.code.trim() || nextCode('GD-NEW', testCases.length + 1);
+    const scenario = { id: createId('ts'), useCaseId: testCaseForm.useCaseId, code: nextCode('TS-NEW', Date.now() % 1000), title: `Tình huống cho ${nextTransactionCode}`, type: 'positive' as const };
     onAddTestCase({
       id: createId('tc'),
-      code: testCaseForm.code.trim(),
+      code: nextTransactionCode,
       scenarioId: scenario.id,
       useCaseIds: [testCaseForm.useCaseId],
       title: testCaseForm.title.trim(),
@@ -518,7 +520,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       expectedResult: testCaseForm.expectedResult.trim(),
       steps: testCaseForm.steps.split('\n').map((step) => step.trim()).filter(Boolean)
     }, scenario);
-    setTestCaseForm((current) => ({ ...current, code: nextCode('TC-NEW', testCases.length + 2), title: '', expectedResult: '', steps: '' }));
+    setTestCaseForm((current) => ({ ...current, code: '', title: '', expectedResult: '', steps: '' }));
   }
 
   function submitRun(event: FormEvent) {
@@ -565,7 +567,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     );
 
     if (automatedCases.length === 0) {
-      setAutomationMessage('Đợt kiểm thử đang chọn chưa có ca kiểm thử để chạy tự động.');
+      setAutomationMessage('Đợt kiểm thử đang chọn chưa có giao dịch kiểm thử để chạy tự động.');
       return;
     }
 
@@ -584,19 +586,25 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       });
     });
 
-    setAutomationMessage(`Đã tạo kết quả tự động cho ${automatedCases.length} ca kiểm thử trong đợt ${selectedRun.code}.`);
+    setAutomationMessage(`Đã tạo kết quả tự động cho ${automatedCases.length} giao dịch kiểm thử trong đợt ${selectedRun.code}.`);
   }
 
   async function importDocx(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file || !selectedProject) return;
+    if (!file) return;
+    if (!selectedProject) {
+      setImportMessage('Cần tạo hoặc chọn dự án trước khi đính kèm kịch bản.');
+      event.target.value = '';
+      return;
+    }
 
     try {
       const mammoth = await import('mammoth/mammoth.browser');
       const extracted = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
       const importedCases = parseImportedTestCases(extracted.value);
       if (importedCases.length === 0) {
-        setImportMessage('Không tìm thấy UC/ca kiểm thử trong file Word. Hệ thống nhận dạng các mã như UC.016, [UC.016-1] hoặc TCs_001.');
+        setImportMessage('Không tìm thấy UC/giao dịch trong file Word. Hệ thống nhận dạng các mã như UC.016, [UC.016-1] hoặc TCs_001.');
+        event.target.value = '';
         return;
       }
 
@@ -612,10 +620,11 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       }
       if (selectedRun) onUpdateRunScope(selectedRun.id, [...new Set([...scopedRunIds, ...importedUseCaseIds])]);
       setRunForm((current) => ({ ...current, useCaseIds: [...new Set([...current.useCaseIds, ...importedUseCaseIds])] }));
-      setImportMessage(`Đã import ${importedUseCaseIds.size} UC và ${importedCount} ca kiểm thử từ file ${file.name}.`);
+      setImportMessage(`Đã import ${importedUseCaseIds.size} UC và ${importedCount} giao dịch kiểm thử từ file ${file.name}.`);
       event.target.value = '';
     } catch (error) {
       setImportMessage(`Không import được file Word: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
+      event.target.value = '';
     }
   }
 
@@ -625,7 +634,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         <div className="panel-heading">
           <div>
             <p>Quy trình nhập dữ liệu</p>
-            <h2>1. Dự án → 2. Đợt kiểm thử/DS UC → 3. Kịch bản/ca kiểm thử → 4. Thực hiện</h2>
+            <h2>1. Dự án → 2. Đợt kiểm thử/DS UC → 3. Kịch bản/giao dịch → 4. Thực hiện</h2>
           </div>
           <Database aria-hidden />
         </div>
@@ -686,8 +695,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p>Bước 3 - Chuẩn bị kịch bản/ca kiểm thử</p>
-            <h2>Nhập UC, ca kiểm thử hoặc import từ file Word mẫu</h2>
+            <p>Bước 3 - Chuẩn bị kịch bản/giao dịch</p>
+            <h2>Import kịch bản Word hoặc nhập giao dịch kiểm thử tùy chọn</h2>
           </div>
           <FileCheck2 aria-hidden />
         </div>
@@ -700,21 +709,21 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
       <div className="form-grid">
         <form className="entry-form" onSubmit={submitUseCase}>
-          <h3>Thêm UC cho dự án đang chọn</h3>
-          <label>Mã UC<input value={useCaseForm.code} onChange={(event) => setUseCaseForm({ ...useCaseForm, code: event.target.value })} required /></label>
+          <h3>Thêm UC tùy chọn</h3>
+          <label>Mã UC (tùy chọn)<input value={useCaseForm.code} onChange={(event) => setUseCaseForm({ ...useCaseForm, code: event.target.value })} placeholder="Để trống nếu mã đã có trong file kịch bản" /></label>
           <label>Tên UC<input value={useCaseForm.title} onChange={(event) => setUseCaseForm({ ...useCaseForm, title: event.target.value })} required /></label>
           <label>Phân hệ<input value={useCaseForm.module} onChange={(event) => setUseCaseForm({ ...useCaseForm, module: event.target.value })} required /></label>
           <button type="submit">Lưu UC</button>
         </form>
 
         <form className="entry-form" onSubmit={submitTestCase}>
-          <h3>Thêm ca kiểm thử</h3>
-          <label>Mã ca kiểm thử<input value={testCaseForm.code} onChange={(event) => setTestCaseForm({ ...testCaseForm, code: event.target.value })} required /></label>
-          <label>Tên ca kiểm thử<input value={testCaseForm.title} onChange={(event) => setTestCaseForm({ ...testCaseForm, title: event.target.value })} required /></label>
+          <h3>Thêm giao dịch kiểm thử tùy chọn</h3>
+          <label>Mã giao dịch (tùy chọn)<input value={testCaseForm.code} onChange={(event) => setTestCaseForm({ ...testCaseForm, code: event.target.value })} placeholder="Ví dụ: UC.016-1, có thể để trống" /></label>
+          <label>Tên giao dịch<input value={testCaseForm.title} onChange={(event) => setTestCaseForm({ ...testCaseForm, title: event.target.value })} required /></label>
           <label>UC liên kết<select value={testCaseForm.useCaseId} onChange={(event) => setTestCaseForm({ ...testCaseForm, useCaseId: event.target.value })} required>{useCases.map((useCase) => <option key={useCase.id} value={useCase.id}>{useCase.code} - {useCase.title}</option>)}</select></label>
-          <label>Kết quả mong đợi<textarea value={testCaseForm.expectedResult} onChange={(event) => setTestCaseForm({ ...testCaseForm, expectedResult: event.target.value })} required /></label>
+          <label>Kết quả mong đợi (tùy chọn)<textarea value={testCaseForm.expectedResult} onChange={(event) => setTestCaseForm({ ...testCaseForm, expectedResult: event.target.value })} /></label>
           <label>Các bước thực hiện<textarea value={testCaseForm.steps} onChange={(event) => setTestCaseForm({ ...testCaseForm, steps: event.target.value })} placeholder="Mỗi dòng là một bước" /></label>
-          <button type="submit">Lưu ca kiểm thử</button>
+          <button type="submit">Lưu giao dịch</button>
         </form>
       </div>
 
@@ -737,7 +746,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         <form className="entry-form" onSubmit={submitResult}>
           <h3>Ghi kết quả thủ công</h3>
           <label>Đợt kiểm thử<select value={resultForm.testRunId} onChange={(event) => setResultForm({ ...resultForm, testRunId: event.target.value })} required>{testRuns.map((run) => <option key={run.id} value={run.id}>{run.code}</option>)}</select></label>
-          <label>Ca kiểm thử<select value={resultForm.testCaseId} onChange={(event) => setResultForm({ ...resultForm, testCaseId: event.target.value })} required>{testCases.map((testCase) => <option key={testCase.id} value={testCase.id}>{testCase.code} - {testCase.title}</option>)}</select></label>
+          <label>Giao dịch kiểm thử<select value={resultForm.testCaseId} onChange={(event) => setResultForm({ ...resultForm, testCaseId: event.target.value })} required>{testCases.map((testCase) => <option key={testCase.id} value={testCase.id}>{testCase.code} - {testCase.title}</option>)}</select></label>
           <label>Trạng thái<select value={resultForm.status} onChange={(event) => setResultForm({ ...resultForm, status: event.target.value as ResultStatus })}><option value="Pass">Đạt</option><option value="Fail">Không đạt</option><option value="Blocked">Bị chặn</option><option value="Not Run">Chưa chạy</option><option value="Flaky">Không ổn định</option><option value="Infrastructure Error">Lỗi hạ tầng</option></select></label>
           <label>Kết quả thực tế<textarea value={resultForm.actualResult} onChange={(event) => setResultForm({ ...resultForm, actualResult: event.target.value })} required /></label>
           <button type="submit">Lưu kết quả</button>
@@ -771,7 +780,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
           <section className="entry-form">
             <h3>Mô hình tự động hóa</h3>
-            <p className="plain-text">Luồng tự động sẽ lấy dự án và đợt kiểm thử đang chọn, đọc danh sách UC trong phạm vi đợt, tìm các ca kiểm thử liên quan, chạy script Playwright theo tag, sau đó ghi Pass/Fail/Blocked và minh chứng về hệ thống.</p>
+            <p className="plain-text">Luồng tự động sẽ lấy dự án và đợt kiểm thử đang chọn, đọc danh sách UC trong phạm vi đợt, tìm các giao dịch kiểm thử liên quan, chạy script Playwright theo tag, sau đó ghi Pass/Fail/Blocked và minh chứng về hệ thống.</p>
             <div className="automation-flow">
               <span>Dự án</span>
               <span>Đợt kiểm thử</span>
@@ -925,7 +934,7 @@ function auditActionLabel(action: string): string {
   const labels: Record<string, string> = {
     CREATE_PROJECT: 'Tạo dự án',
     CREATE_USE_CASE: 'Tạo UC',
-    CREATE_TEST_CASE: 'Tạo ca kiểm thử',
+    CREATE_TEST_CASE: 'Tạo giao dịch kiểm thử',
     CREATE_TEST_RUN: 'Tạo đợt kiểm thử',
     UPDATE_TEST_RUN_SCOPE: 'Cập nhật phạm vi UC',
     CREATE_MANUAL_RESULT: 'Ghi kết quả thủ công',
