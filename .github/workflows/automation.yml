@@ -5,6 +5,8 @@ name: Automation Runner
     branches: [main]
     paths:
       - ".github/workflows/automation.yml"
+  repository_dispatch:
+    types: [automation-run]
   workflow_dispatch:
     inputs:
       test_run_id:
@@ -42,12 +44,14 @@ jobs:
   automation:
     runs-on: ubuntu-latest
     env:
-      TEST_RUN_ID: ${{ inputs.test_run_id }}
-      TEST_BASE_URL: ${{ inputs.base_url }}
-      TEST_USERNAME: ${{ inputs.account_role || secrets.TEST_USERNAME }}
-      TEST_PASSWORD: ${{ inputs.password || secrets.TEST_PASSWORD }}
-      PROJECT_CODE: ${{ inputs.project_code }}
-      TARGET_TRANSACTION_CODES: ${{ inputs.transaction_codes }}
+      TEST_RUN_ID: ${{ github.event.client_payload.test_run_id || inputs.test_run_id || 'RUN-MANUAL' }}
+      TEST_BASE_URL: ${{ github.event.client_payload.base_url || inputs.base_url || 'http://127.0.0.1:4173' }}
+      TEST_USERNAME: ${{ github.event.client_payload.account_role || inputs.account_role || secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ github.event.client_payload.password || inputs.password || secrets.TEST_PASSWORD }}
+      PROJECT_CODE: ${{ github.event.client_payload.project_code || inputs.project_code || 'KTKT' }}
+      TARGET_TRANSACTION_CODES: ${{ github.event.client_payload.transaction_codes || inputs.transaction_codes }}
+      TEST_BROWSER: ${{ github.event.client_payload.browser || inputs.browser || 'chromium' }}
+      TEST_SUITE: ${{ github.event.client_payload.suite || inputs.suite }}
       ENVIRONMENT_CODE: UAT
       APPLICATION_VERSION: v2.0.0
       RESULTS_INGEST_URL: ${{ secrets.RESULTS_INGEST_URL }}
@@ -68,9 +72,9 @@ jobs:
 
       - name: Run Playwright automation
         run: |
-          PROJECT_ARG="--project=${{ inputs.browser }}"
-          if [ -n "${{ inputs.suite }}" ]; then
-            npx playwright test tests/target-app/specs $PROJECT_ARG --grep "${{ inputs.suite }}"
+          PROJECT_ARG="--project=${TEST_BROWSER}"
+          if [ -n "${TEST_SUITE}" ]; then
+            npx playwright test tests/target-app/specs $PROJECT_ARG --grep "${TEST_SUITE}"
           else
             npx playwright test tests/target-app/specs $PROJECT_ARG
           fi
@@ -84,7 +88,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-evidence-${{ inputs.test_run_id }}
+          name: playwright-evidence-${{ env.TEST_RUN_ID }}
           path: |
             playwright-report
             test-results

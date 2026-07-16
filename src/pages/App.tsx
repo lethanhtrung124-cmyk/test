@@ -590,17 +590,18 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           transactionCodes: automatedCases.map((testCase) => testCase.code)
         })
       });
-      const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; error?: string; detail?: string; requiredEnv?: string[]; repository?: string; workflow?: string; ref?: string };
+      const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; dispatchMode?: string; error?: string; detail?: string; requiredEnv?: string[]; repository?: string; workflow?: string; ref?: string; requiredPermission?: string };
 
       if (!response.ok) {
         const requiredEnv = payload.requiredEnv?.length ? ` Cần cấu hình Netlify env: ${payload.requiredEnv.join(', ')}.` : '';
         const detail = payload.detail ? ` Chi tiết GitHub: ${payload.detail}.` : '';
         const target = payload.repository ? ` Đích gọi: ${payload.repository}/${payload.workflow ?? 'automation.yml'}@${payload.ref ?? 'main'}.` : '';
-        setAutomationMessage(`Chưa gửi được yêu cầu chạy thật: ${payload.error ?? response.statusText}.${detail}${target}${requiredEnv}`);
+        const permission = payload.requiredPermission ? ` Quyền cần có: ${payload.requiredPermission}.` : '';
+        setAutomationMessage(`Chưa gửi được yêu cầu chạy thật: ${payload.error ?? response.statusText}.${detail}${target}${permission}${requiredEnv}`);
         return;
       }
 
-      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length} giao dịch. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
+      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length} giao dịch qua ${payload.dispatchMode ?? 'GitHub Actions'}. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
     } catch (error) {
       setAutomationMessage(`Không gọi được automation runner: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }

@@ -20,7 +20,7 @@
 Thêm các biến môi trường cho site Netlify:
 
 ```text
-GITHUB_AUTOMATION_TOKEN=<fine-grained token co quyen Actions: write>
+GITHUB_AUTOMATION_TOKEN=<fine-grained token co quyen Actions: write va Contents: write>
 GITHUB_OWNER=lethanhtrung124-cmyk
 GITHUB_REPO=test
 GITHUB_REF_NAME=main
@@ -28,6 +28,14 @@ GITHUB_AUTOMATION_WORKFLOW=automation.yml
 ```
 
 ## Cấu hình GitHub Secrets
+
+Token GitHub cần cấp quyền cho repo:
+
+```text
+Actions: Read and write
+Contents: Read and write
+Metadata: Read-only
+```
 
 Nên cấu hình credentials kiểm thử bằng GitHub Secrets:
 
