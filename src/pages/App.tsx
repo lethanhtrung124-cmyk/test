@@ -590,11 +590,13 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           transactionCodes: automatedCases.map((testCase) => testCase.code)
         })
       });
-      const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; error?: string; detail?: string; requiredEnv?: string[] };
+      const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; error?: string; detail?: string; requiredEnv?: string[]; repository?: string; workflow?: string; ref?: string };
 
       if (!response.ok) {
         const requiredEnv = payload.requiredEnv?.length ? ` Cần cấu hình Netlify env: ${payload.requiredEnv.join(', ')}.` : '';
-        setAutomationMessage(`Chưa gửi được yêu cầu chạy thật: ${payload.error ?? response.statusText}.${requiredEnv}`);
+        const detail = payload.detail ? ` Chi tiết GitHub: ${payload.detail}.` : '';
+        const target = payload.repository ? ` Đích gọi: ${payload.repository}/${payload.workflow ?? 'automation.yml'}@${payload.ref ?? 'main'}.` : '';
+        setAutomationMessage(`Chưa gửi được yêu cầu chạy thật: ${payload.error ?? response.statusText}.${detail}${target}${requiredEnv}`);
         return;
       }
 

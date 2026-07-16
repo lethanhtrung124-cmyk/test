@@ -52,9 +52,13 @@ exports.handler = async (event) => {
   });
 
   if (!response.ok) {
+    const detail = await safeResponseBody(response);
     return json(response.status, {
       error: 'Could not dispatch GitHub Actions workflow',
-      detail: await response.text()
+      detail,
+      repository: `${owner}/${repo}`,
+      workflow: workflowFile,
+      ref
     });
   }
 
@@ -67,6 +71,16 @@ exports.handler = async (event) => {
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+async function safeResponseBody(response) {
+  const raw = await response.text();
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.message || raw;
+  } catch {
+    return raw;
+  }
 }
 
 function json(statusCode, body) {
