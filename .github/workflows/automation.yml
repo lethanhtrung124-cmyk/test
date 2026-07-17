@@ -1,57 +1,21 @@
 name: Automation Runner
 
 "on":
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/automation.yml"
   repository_dispatch:
     types: [automation-run]
-  workflow_dispatch:
-    inputs:
-      test_run_id:
-        description: Test run code/id from the platform
-        required: true
-      base_url:
-        description: Target application URL
-        required: true
-      suite:
-        description: Playwright grep tag, for example @suite:functional
-        required: false
-        default: ""
-      browser:
-        description: Playwright project: chromium, firefox, webkit, mobile-chrome
-        required: false
-        default: chromium
-      account_role:
-        description: Test account username or role
-        required: false
-        default: ""
-      password:
-        description: Test account password
-        required: false
-        default: ""
-      project_code:
-        description: Project code from the platform
-        required: false
-        default: KTKT
-      transaction_codes:
-        description: Comma-separated transaction codes selected in the run
-        required: false
-        default: ""
 
 jobs:
   automation:
     runs-on: ubuntu-latest
     env:
-      TEST_RUN_ID: ${{ github.event.client_payload.test_run_id || inputs.test_run_id || 'RUN-MANUAL' }}
-      TEST_BASE_URL: ${{ github.event.client_payload.base_url || inputs.base_url || 'http://127.0.0.1:4173' }}
-      TEST_USERNAME: ${{ github.event.client_payload.account_role || inputs.account_role || secrets.TEST_USERNAME }}
-      TEST_PASSWORD: ${{ github.event.client_payload.password || inputs.password || secrets.TEST_PASSWORD }}
-      PROJECT_CODE: ${{ github.event.client_payload.project_code || inputs.project_code || 'KTKT' }}
-      TARGET_TRANSACTION_CODES: ${{ github.event.client_payload.transaction_codes || inputs.transaction_codes }}
-      TEST_BROWSER: ${{ github.event.client_payload.browser || inputs.browser || 'chromium' }}
-      TEST_SUITE: ${{ github.event.client_payload.suite || inputs.suite }}
+      TEST_RUN_ID: ${{ github.event.client_payload.test_run_id || 'RUN-AUTOMATION' }}
+      TEST_BASE_URL: ${{ github.event.client_payload.base_url || 'http://127.0.0.1:4173' }}
+      TEST_USERNAME: ${{ github.event.client_payload.account_role || secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ github.event.client_payload.password || secrets.TEST_PASSWORD }}
+      PROJECT_CODE: ${{ github.event.client_payload.project_code || 'KTKT' }}
+      TARGET_TRANSACTION_CODES: ${{ github.event.client_payload.transaction_codes }}
+      TEST_BROWSER: ${{ github.event.client_payload.browser || 'chromium' }}
+      TEST_SUITE: ${{ github.event.client_payload.suite }}
       ENVIRONMENT_CODE: UAT
       APPLICATION_VERSION: v2.0.0
       RESULTS_INGEST_URL: ${{ secrets.RESULTS_INGEST_URL }}

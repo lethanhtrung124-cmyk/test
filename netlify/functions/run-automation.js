@@ -39,33 +39,6 @@ exports.handler = async (event) => {
     return json(400, { error: 'testRunId/testRunCode and baseUrl are required' });
   }
 
-  const dispatchResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`, {
-    method: 'POST',
-    headers: githubHeaders(token),
-    body: JSON.stringify({ ref, inputs })
-  });
-
-  if (dispatchResponse.ok) {
-    return json(202, {
-      status: 'queued',
-      dispatchMode: 'workflow_dispatch',
-      workflowUrl: `https://github.com/${owner}/${repo}/actions/workflows/${workflowFile}`,
-      evidenceLocation: 'GitHub Actions artifact: playwright-evidence'
-    });
-  }
-
-  const dispatchDetail = await safeResponseBody(dispatchResponse);
-  const shouldFallback = dispatchDetail.toLowerCase().includes('workflow_dispatch');
-  if (!shouldFallback) {
-    return json(dispatchResponse.status, {
-      error: 'Could not dispatch GitHub Actions workflow',
-      detail: dispatchDetail,
-      repository: `${owner}/${repo}`,
-      workflow: workflowFile,
-      ref
-    });
-  }
-
   const repositoryDispatchResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
     method: 'POST',
     headers: githubHeaders(token),
@@ -79,7 +52,6 @@ exports.handler = async (event) => {
     return json(repositoryDispatchResponse.status, {
       error: 'Could not dispatch GitHub repository event',
       detail: await safeResponseBody(repositoryDispatchResponse),
-      firstAttempt: dispatchDetail,
       repository: `${owner}/${repo}`,
       workflow: workflowFile,
       ref,
