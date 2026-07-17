@@ -467,6 +467,17 @@ interface EntryViewProps {
   onReset: () => void;
 }
 
+interface AutomationRunStatus {
+  id: number;
+  status: string;
+  conclusion: string | null;
+  title: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  artifacts: Array<{ id: number; name: string; sizeInBytes: number; url: string }>;
+}
+
 function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
   const [entryMode, setEntryMode] = useState<'manual' | 'automation'>('manual');
   const [projectForm, setProjectForm] = useState({ code: nextCode('PRJ-NEW', projects.length + 1), name: '', ownerUnit: '' });
@@ -477,8 +488,16 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
   const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:smoke', retryPolicy: '1', note: '' });
   const [automationMessage, setAutomationMessage] = useState('');
+  const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
+  const [automationStatusMessage, setAutomationStatusMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
+
+  useEffect(() => {
+    if (entryMode === 'automation' && automationRuns.length === 0) {
+      void refreshAutomationStatus();
+    }
+  }, [entryMode]);
 
   function submitProject(event: FormEvent) {
     event.preventDefault();
@@ -601,8 +620,28 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       }
 
       setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length} giao dịch qua ${payload.dispatchMode ?? 'GitHub Actions'}. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
+      setTimeout(() => {
+        void refreshAutomationStatus();
+      }, 3000);
     } catch (error) {
       setAutomationMessage(`Không gọi được automation runner: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
+    }
+  }
+
+  async function refreshAutomationStatus() {
+    setAutomationStatusMessage('Đang cập nhật kết quả từ GitHub Actions...');
+    try {
+      const response = await fetch('/.netlify/functions/automation-status');
+      const payload = await response.json() as { runs?: AutomationRunStatus[]; error?: string; detail?: string; requiredEnv?: string[] };
+      if (!response.ok) {
+        const requiredEnv = payload.requiredEnv?.length ? ` Cần cấu hình Netlify env: ${payload.requiredEnv.join(', ')}.` : '';
+        setAutomationStatusMessage(`Chưa đọc được kết quả automation: ${payload.error ?? response.statusText}. ${payload.detail ?? ''}${requiredEnv}`);
+        return;
+      }
+      setAutomationRuns(payload.runs ?? []);
+      setAutomationStatusMessage((payload.runs ?? []).length ? 'Đã cập nhật kết quả automation mới nhất.' : 'Chưa có lần chạy automation nào.');
+    } catch (error) {
+      setAutomationStatusMessage(`Không gọi được trạng thái automation: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }
   }
 
@@ -793,18 +832,37 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
             <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}
+            <button className="secondary-action" type="button" onClick={refreshAutomationStatus}>Cập nhật kết quả mới nhất</button>
+            {automationStatusMessage && <p className="form-note">{automationStatusMessage}</p>}
           </form>
 
           <section className="entry-form">
-            <h3>Mô hình tự động hóa</h3>
-            <p className="plain-text">Luồng tự động sẽ gửi yêu cầu sang GitHub Actions, chạy Playwright theo URL, tài khoản, trình duyệt và tag script. Sau khi chạy, GitHub Actions sinh JUnit, HTML report, screenshot, video và trace trong artifact.</p>
-            <div className="automation-flow">
-              <span>Dự án</span>
-              <span>Đợt kiểm thử</span>
-              <span>UC trong phạm vi</span>
-              <span>Script Playwright</span>
-              <span>Kết quả & minh chứng</span>
-            </div>
+            <h3>Kết quả tự động mới nhất</h3>
+            {automationRuns.length === 0 ? (
+              <>
+                <p className="plain-text">Bấm cập nhật để lấy trạng thái GitHub Actions và artifact minh chứng mới nhất.</p>
+                <div className="automation-flow">
+                  <span>Dự án</span>
+                  <span>Đợt kiểm thử</span>
+                  <span>UC trong phạm vi</span>
+                  <span>Script Playwright</span>
+                  <span>Kết quả & minh chứng</span>
+                </div>
+              </>
+            ) : (
+              <div className="automation-results">
+                {automationRuns.map((run) => (
+                  <div className="automation-result" key={run.id}>
+                    <strong>{automationRunLabel(run)}</strong>
+                    <span>{new Date(run.createdAt).toLocaleString('vi-VN')}</span>
+                    <a href={run.url} target="_blank" rel="noreferrer">Mở workflow run</a>
+                    {run.artifacts.map((artifact) => (
+                      <a key={artifact.id} href={artifact.url} target="_blank" rel="noreferrer">Tải {artifact.name}</a>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       )}
@@ -929,6 +987,14 @@ function automationStatusLabel(status: TestCase['automationStatus']): string {
 
 function runnerTypeLabel(type: TestResult['runnerType']): string {
   return type === 'automation' ? 'Tự động' : 'Thủ công';
+}
+
+function automationRunLabel(run: AutomationRunStatus): string {
+  if (run.status !== 'completed') return 'Đang chạy';
+  if (run.conclusion === 'success') return 'Đạt';
+  if (run.conclusion === 'failure') return 'Không đạt';
+  if (run.conclusion === 'cancelled') return 'Đã hủy';
+  return run.conclusion ?? run.status;
 }
 
 function runStatusLabel(status: TestRun['status']): string {
