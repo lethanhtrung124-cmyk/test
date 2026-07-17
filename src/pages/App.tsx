@@ -475,7 +475,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'], useCaseIds: useCases.map((useCase) => useCase.id) });
   const [resultForm, setResultForm] = useState({ testRunId: selectedRun?.id ?? testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
-  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', password: '', browser: 'chromium', suiteTag: '@suite:functional', retryPolicy: '1', note: '' });
+  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:smoke', retryPolicy: '1', note: '' });
   const [automationMessage, setAutomationMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
@@ -583,7 +583,6 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           testRunCode: selectedRun.code,
           baseUrl: automationForm.baseUrl,
           accountRole: automationForm.accountRole,
-          password: automationForm.password,
           browser: automationForm.browser,
           suiteTag: automationForm.suiteTag,
           retryPolicy: automationForm.retryPolicy,
@@ -785,12 +784,12 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
             <h3>Yêu cầu chạy kiểm thử tự động</h3>
             <label>URL hệ thống cần kiểm thử<input value={automationForm.baseUrl} onChange={(event) => setAutomationForm({ ...automationForm, baseUrl: event.target.value })} placeholder="https://uat.example.vn" required /></label>
             <label>Vai trò/tài khoản dùng để kiểm thử<input value={automationForm.accountRole} onChange={(event) => setAutomationForm({ ...automationForm, accountRole: event.target.value })} /></label>
-            <label>Mật khẩu đăng nhập tự động<input type="password" value={automationForm.password} onChange={(event) => setAutomationForm({ ...automationForm, password: event.target.value })} autoComplete="current-password" required /></label>
+            <p className="form-note">Tài khoản và mật khẩu chạy thật được lấy từ GitHub Secrets TEST_USERNAME và TEST_PASSWORD để không lộ trong log.</p>
             <div className="inline-fields">
               <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
               <label>Số lần chạy lại<input type="number" min="0" max="3" value={automationForm.retryPolicy} onChange={(event) => setAutomationForm({ ...automationForm, retryPolicy: event.target.value })} /></label>
             </div>
-            <label>Tag/bộ script<input value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })} /></label>
+            <label>Tag/bộ script<input value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })} placeholder="@suite:smoke hoặc @suite:regression" /></label>
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
             <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}

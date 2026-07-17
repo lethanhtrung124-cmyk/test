@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('@project:KTKT @module:user @suite:smoke', () => {
+test.describe('@project:KTKT @module:user @suite:platform', () => {
   test('UC-USER-001 | TC-USER-001 | Người dùng xem được điều hướng dự án và phạm vi', async ({ page }) => {
     await page.goto('/');
 

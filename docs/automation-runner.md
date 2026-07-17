@@ -2,7 +2,7 @@
 
 ## Luồng chạy
 
-1. Người dùng chọn dự án, đợt kiểm thử, nhập URL, tài khoản, mật khẩu, trình duyệt và tag script trên ứng dụng.
+1. Người dùng chọn dự án, đợt kiểm thử, nhập URL, trình duyệt và tag script trên ứng dụng.
 2. Ứng dụng gọi Netlify Function `/.netlify/functions/run-automation`.
 3. Netlify Function gọi GitHub Actions workflow `automation.yml`.
 4. GitHub Actions chạy Playwright trên URL mục tiêu.
@@ -45,6 +45,16 @@ TEST_PASSWORD=<mat khau kiem thu>
 RESULTS_INGEST_URL=<endpoint nhan ket qua, neu co>
 RESULTS_INGEST_TOKEN=<token ingest, neu co>
 ```
+
+Không truyền mật khẩu qua form ứng dụng. Workflow chỉ đọc mật khẩu từ GitHub Secrets để tránh lộ trong log GitHub Actions.
+
+Các tag script mẫu hiện có:
+
+```text
+@suite:smoke
+```
+
+`@suite:smoke` hiện kiểm tra hệ thống đích có phản hồi được tại URL kiểm thử. Các giao dịch nghiệp vụ chi tiết cần được viết thêm thành script Playwright riêng và gắn tag tương ứng.
 
 ## Nơi xem minh chứng
 

@@ -10,10 +10,9 @@ jobs:
     env:
       TEST_RUN_ID: ${{ github.event.client_payload.test_run_id || 'RUN-AUTOMATION' }}
       TEST_BASE_URL: ${{ github.event.client_payload.base_url || 'http://127.0.0.1:4173' }}
-      TEST_USERNAME: ${{ github.event.client_payload.account_role || secrets.TEST_USERNAME }}
-      TEST_PASSWORD: ${{ github.event.client_payload.password || secrets.TEST_PASSWORD }}
+      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
       PROJECT_CODE: ${{ github.event.client_payload.project_code || 'KTKT' }}
-      TARGET_TRANSACTION_CODES: ${{ github.event.client_payload.transaction_codes }}
       TEST_BROWSER: ${{ github.event.client_payload.browser || 'chromium' }}
       TEST_SUITE: ${{ github.event.client_payload.suite }}
       ENVIRONMENT_CODE: UAT

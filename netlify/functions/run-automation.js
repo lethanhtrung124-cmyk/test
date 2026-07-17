@@ -30,7 +30,6 @@ exports.handler = async (event) => {
     suite: text(payload.suiteTag),
     browser: text(payload.browser || 'chromium'),
     account_role: text(payload.accountRole),
-    password: text(payload.password),
     project_code: text(payload.projectCode),
     transaction_codes: Array.isArray(payload.transactionCodes) ? payload.transactionCodes.join(',') : ''
   };
