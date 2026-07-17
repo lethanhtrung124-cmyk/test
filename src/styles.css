@@ -561,6 +561,46 @@ td span {
   text-decoration: none;
 }
 
+.automation-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.summary-counts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.summary-counts span {
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.automation-result-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.automation-result-row {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 0.8fr) minmax(220px, 2fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e6eeeb;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ffffff;
+  font-size: 0.86rem;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -584,6 +624,11 @@ td span {
   .form-grid,
   .management-grid,
   .automation-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-counts,
+  .automation-result-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -612,6 +657,11 @@ td span {
   .inline-fields,
   .mode-switch,
   .automation-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-counts,
+  .automation-result-row {
     grid-template-columns: 1fr;
   }
 }

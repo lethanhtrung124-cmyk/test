@@ -12,7 +12,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useState } from 'react';
-import { Badge } from '../components/Badge';
+import { Badge, type BadgeTone } from '../components/Badge';
 import { DataTable } from '../components/DataTable';
 import { MetricCard } from '../components/MetricCard';
 import {
@@ -475,7 +475,31 @@ interface AutomationRunStatus {
   url: string;
   createdAt: string;
   updatedAt: string;
-  artifacts: Array<{ id: number; name: string; sizeInBytes: number; url: string }>;
+  summary: AutomationRunSummary | null;
+  artifacts: Array<{ id: number; name: string; sizeInBytes: number; url: string; summary?: AutomationRunSummary | { error: string } | null }>;
+}
+
+interface AutomationRunSummary {
+  testRunId: string;
+  generatedAt: string;
+  counts: {
+    total: number;
+    pass: number;
+    fail: number;
+    blocked: number;
+    infrastructureError: number;
+  };
+  results: AutomationRunResult[];
+}
+
+interface AutomationRunResult {
+  title: string;
+  useCaseCode?: string;
+  testCaseCode?: string;
+  status: ResultStatus;
+  durationMs: number;
+  retryCount: number;
+  commitSha?: string;
 }
 
 function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
@@ -858,6 +882,29 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
                   <div className="automation-result" key={run.id}>
                     <strong>{automationRunLabel(run)}</strong>
                     <span>{new Date(run.createdAt).toLocaleString('vi-VN')}</span>
+                    {run.summary ? (
+                      <div className="automation-summary">
+                        <div className="summary-counts">
+                          <span>Tổng: <strong>{run.summary.counts.total}</strong></span>
+                          <span>Đạt: <strong>{run.summary.counts.pass}</strong></span>
+                          <span>Không đạt: <strong>{run.summary.counts.fail}</strong></span>
+                          <span>Bị chặn: <strong>{run.summary.counts.blocked}</strong></span>
+                          <span>Lỗi hạ tầng: <strong>{run.summary.counts.infrastructureError}</strong></span>
+                        </div>
+                        <div className="automation-result-list">
+                          {run.summary.results.map((result, index) => (
+                            <div className="automation-result-row" key={`${run.id}-${result.testCaseCode ?? index}`}>
+                              <Badge tone={automationResultTone(result.status)}>{automationResultLabel(result.status)}</Badge>
+                              <span>{result.useCaseCode ?? 'UC'} / {result.testCaseCode ?? 'Giao dịch'}</span>
+                              <span>{result.title}</span>
+                              <span>{result.durationMs} ms</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <span>Chưa có summary trong artifact hoặc workflow vẫn đang chạy.</span>
+                    )}
                     <a href={run.url} target="_blank" rel="noreferrer">Mở workflow run</a>
                     {run.artifacts.map((artifact) => (
                       <a key={artifact.id} href={artifact.url} target="_blank" rel="noreferrer">Tải {artifact.name}</a>
@@ -1009,6 +1056,17 @@ function automationRunLabel(run: AutomationRunStatus): string {
   if (run.conclusion === 'failure') return 'Có ca không đạt';
   if (run.conclusion === 'cancelled') return 'Đã hủy';
   return run.conclusion ?? run.status;
+}
+
+function automationResultLabel(status: ResultStatus): string {
+  return resultStatusLabel(status);
+}
+
+function automationResultTone(status: ResultStatus): BadgeTone {
+  if (status === 'Pass') return 'success';
+  if (status === 'Fail' || status === 'Infrastructure Error') return 'danger';
+  if (status === 'Blocked' || status === 'Flaky') return 'warning';
+  return 'neutral';
 }
 
 function runStatusLabel(status: TestRun['status']): string {
