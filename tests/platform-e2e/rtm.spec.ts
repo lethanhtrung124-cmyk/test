@@ -5,7 +5,7 @@ test.describe('@project:KTKT @module:test-case @suite:smoke', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Ma trận truy vết' }).click();
 
-    await expect(page.getByRole('heading', { name: /UC \/ Tình huống \/ Ca kiểm thử/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /UC \/ Tình huống \/ Giao dịch kiểm thử/ })).toBeVisible();
     await expect(page.getByText('TC-TC-001')).toBeVisible();
     await expect(page.getByText('UC-TC-001')).toBeVisible();
   });
