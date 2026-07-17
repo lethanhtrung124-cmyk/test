@@ -789,7 +789,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
               <label>Số lần chạy lại<input type="number" min="0" max="3" value={automationForm.retryPolicy} onChange={(event) => setAutomationForm({ ...automationForm, retryPolicy: event.target.value })} /></label>
             </div>
-            <label>Tag/bộ script<input value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })} placeholder="@suite:smoke hoặc @suite:regression" /></label>
+            <label>Bộ script tự động<select value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })}><option value="@suite:smoke">Smoke - kiểm tra URL hệ thống phản hồi</option><option value="">Tất cả script tự động đã cấu hình</option></select></label>
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
             <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}
