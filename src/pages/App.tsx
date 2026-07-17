@@ -486,7 +486,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'], useCaseIds: useCases.map((useCase) => useCase.id) });
   const [resultForm, setResultForm] = useState({ testRunId: selectedRun?.id ?? testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
-  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:smoke', retryPolicy: '1', note: '' });
+  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:scenario', retryPolicy: '1', note: '' });
   const [automationMessage, setAutomationMessage] = useState('');
   const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
   const [automationStatusMessage, setAutomationStatusMessage] = useState('');
@@ -591,6 +591,15 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     }
 
     setAutomationMessage('Đang gửi yêu cầu chạy Playwright lên GitHub Actions...');
+    const scenarioPayload = automatedCases.map((testCase) => ({
+      id: testCase.code,
+      useCaseCode: useCases.find((useCase) => testCase.useCaseIds.includes(useCase.id))?.code ?? '',
+      title: testCase.title,
+      steps: testCase.steps,
+      expectedResult: testCase.expectedResult,
+      precondition: ''
+    }));
+    const compactScenarioPayload = JSON.stringify(scenarioPayload).length < 55000 ? scenarioPayload : [];
 
     try {
       const response = await fetch('/.netlify/functions/run-automation', {
@@ -605,7 +614,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           browser: automationForm.browser,
           suiteTag: automationForm.suiteTag,
           retryPolicy: automationForm.retryPolicy,
-          transactionCodes: automatedCases.map((testCase) => testCase.code)
+          transactionCodes: automatedCases.map((testCase) => testCase.code),
+          scenarios: compactScenarioPayload
         })
       });
       const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; dispatchMode?: string; error?: string; detail?: string; requiredEnv?: string[]; repository?: string; workflow?: string; ref?: string; requiredPermission?: string };
@@ -828,7 +838,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
               <label>Số lần chạy lại<input type="number" min="0" max="3" value={automationForm.retryPolicy} onChange={(event) => setAutomationForm({ ...automationForm, retryPolicy: event.target.value })} /></label>
             </div>
-            <label>Bộ script tự động<select value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })}><option value="@suite:smoke">Smoke - kiểm tra URL hệ thống phản hồi</option><option value="">Tất cả script tự động đã cấu hình</option></select></label>
+            <label>Bộ script tự động<select value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })}><option value="@suite:scenario">Kịch bản Word - chạy từng bước và đối chiếu mong đợi</option><option value="@suite:smoke">Smoke - kiểm tra URL hệ thống phản hồi</option><option value="">Tất cả script tự động đã cấu hình</option></select></label>
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
             <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}

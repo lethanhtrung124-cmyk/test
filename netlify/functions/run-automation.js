@@ -31,7 +31,8 @@ exports.handler = async (event) => {
     browser: text(payload.browser || 'chromium'),
     account_role: text(payload.accountRole),
     project_code: text(payload.projectCode),
-    transaction_codes: Array.isArray(payload.transactionCodes) ? payload.transactionCodes.join(',') : ''
+    transaction_codes: Array.isArray(payload.transactionCodes) ? payload.transactionCodes.join(',') : '',
+    scenarios: normalizeScenarios(payload.scenarios)
   };
 
   if (!inputs.test_run_id || !inputs.base_url) {
@@ -68,6 +69,18 @@ exports.handler = async (event) => {
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeScenarios(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).map((item) => ({
+    id: text(item.id),
+    useCaseCode: text(item.useCaseCode),
+    title: text(item.title),
+    steps: Array.isArray(item.steps) ? item.steps.map(text).filter(Boolean) : [],
+    expectedResult: text(item.expectedResult),
+    precondition: text(item.precondition)
+  })).filter((item) => item.id && item.steps.length > 0);
 }
 
 function githubHeaders(token) {

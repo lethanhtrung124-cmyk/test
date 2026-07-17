@@ -13,11 +13,11 @@ const results = report.suites.flatMap((suite) =>
   suite.specs.flatMap((spec) =>
     spec.tests.map((testCase) => {
       const latest = testCase.results[testCase.results.length - 1];
-      const ids = spec.title.match(/(UC(?:[.-][A-Z0-9]+)+).*?((?:TC|GD)(?:[.-][A-Z0-9]+)+)/i);
+      const ids = extractIds(spec.title);
       return {
         title: spec.title,
-        useCaseCode: ids?.[1]?.toUpperCase(),
-        testCaseCode: ids?.[2]?.toUpperCase(),
+        useCaseCode: ids.useCaseCode,
+        testCaseCode: ids.testCaseCode,
         status: normalizeStatus(latest.status),
         durationMs: latest.duration,
         retryCount: latest.retry,
@@ -42,4 +42,20 @@ function normalizeStatus(status: string) {
   if (status === 'failed' || status === 'timedOut') return 'Fail';
   if (status === 'skipped') return 'Blocked';
   return 'Infrastructure Error';
+}
+
+function extractIds(title: string) {
+  const transactionMatch = title.match(/(UC\.\d+)\s*\|\s*(UC\.\d+-\d+)/i);
+  if (transactionMatch) {
+    return {
+      useCaseCode: transactionMatch[1].toUpperCase(),
+      testCaseCode: transactionMatch[2].toUpperCase()
+    };
+  }
+
+  const classicMatch = title.match(/(UC(?:[.-][A-Z0-9]+)+).*?((?:TC|GD)(?:[.-][A-Z0-9]+)+)/i);
+  return {
+    useCaseCode: classicMatch?.[1]?.toUpperCase(),
+    testCaseCode: classicMatch?.[2]?.toUpperCase()
+  };
 }

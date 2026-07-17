@@ -15,6 +15,9 @@ jobs:
       PROJECT_CODE: ${{ github.event.client_payload.project_code || 'KTKT' }}
       TEST_BROWSER: ${{ github.event.client_payload.browser || 'chromium' }}
       TEST_SUITE: ${{ github.event.client_payload.suite }}
+      TEST_TRANSACTION_CODES: ${{ github.event.client_payload.transaction_codes }}
+      TEST_SCENARIOS_JSON: ${{ toJson(github.event.client_payload.scenarios) }}
+      PLAYWRIGHT_SKIP_WEBSERVER: true
       ENVIRONMENT_CODE: UAT
       APPLICATION_VERSION: v2.0.0
       RESULTS_INGEST_URL: ${{ secrets.RESULTS_INGEST_URL }}
@@ -36,9 +39,9 @@ jobs:
         run: |
           PROJECT_ARG="--project=${TEST_BROWSER}"
           if [ -n "${TEST_SUITE}" ]; then
-            npx playwright test tests/target-app/specs $PROJECT_ARG --grep "${TEST_SUITE}"
+            npx playwright test tests/target-app/specs $PROJECT_ARG --grep "${TEST_SUITE}" --workers=1
           else
-            npx playwright test tests/target-app/specs $PROJECT_ARG
+            npx playwright test tests/target-app/specs $PROJECT_ARG --workers=1
           fi
 
       - run: npm run report:results
