@@ -993,7 +993,8 @@ function cleanCell(value: string): string {
 }
 
 function splitNumberedSteps(value: string): string[] {
-  const parts = value.split(/(?=\b\d+\.\s*)/g).map((part) => part.trim()).filter(Boolean);
+  const normalized = value.replace(/\s+/g, ' ').replace(/(?<!\d)([2-9])\./g, '\n$1.').trim();
+  const parts = normalized.split('\n').map((part) => part.trim()).filter(Boolean);
   return parts.length > 0 ? parts : [value];
 }
 

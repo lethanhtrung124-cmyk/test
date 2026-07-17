@@ -22,7 +22,7 @@ export function loadTargetScenarios(): TargetScenario[] {
   const fileScenarios = readScenarioFile();
   const scenarioById = new Map<string, TargetScenario>();
 
-  for (const scenario of [...fileScenarios, ...payloadScenarios]) {
+  for (const scenario of [...payloadScenarios, ...fileScenarios]) {
     scenarioById.set(normalizeScenarioId(scenario.id), {
       ...scenario,
       id: normalizeScenarioId(scenario.id),

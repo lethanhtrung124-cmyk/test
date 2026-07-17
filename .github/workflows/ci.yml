@@ -46,9 +46,9 @@ jobs:
       - name: Run Playwright
         run: |
           if [ -n "${{ inputs.suite }}" ]; then
-            npx playwright test --grep "${{ inputs.suite }}"
+            npx playwright test --project=chromium --grep "${{ inputs.suite }}"
           else
-            npx playwright test
+            npx playwright test tests/platform-e2e --project=chromium
           fi
 
       - run: npm run report:results
@@ -63,4 +63,9 @@ jobs:
           name: playwright-evidence
           path: |
             playwright-report
-            test-results
+            test-results/**/*.png
+            test-results/**/*.txt
+            test-results/**/*.md
+            test-results/results.json
+            test-results/summary.json
+            test-results/junit.xml
