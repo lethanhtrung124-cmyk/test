@@ -95,8 +95,24 @@ async function login(page: Page) {
     await passwordField.press('Enter');
   }
 
-  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await waitForLoginCompletion(page);
   await expect(page.locator('body')).not.toContainText(/sai mật khẩu|không đúng|giải đúng phép tính|invalid|unauthorized/i, { timeout: 5000 });
+}
+
+async function waitForLoginCompletion(page: Page) {
+  const loadingButton = page.getByRole('button', { name: /đăng nhập\.\.\.|logging in|signing in/i }).first();
+  if (await loadingButton.isVisible().catch(() => false)) {
+    await loadingButton.waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {
+      throw new Error('Đăng nhập chưa hoàn tất: nút đăng nhập vẫn ở trạng thái đang xử lý sau 30 giây.');
+    });
+  }
+
+  await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => undefined);
+
+  const loginHeading = page.getByRole('heading', { name: /đăng nhập hệ thống|login/i }).first();
+  if ((await loginHeading.count()) && (await loginHeading.isVisible().catch(() => false))) {
+    throw new Error('Đăng nhập chưa hoàn tất: hệ thống vẫn ở màn hình đăng nhập sau khi gửi thông tin.');
+  }
 }
 
 async function solveArithmeticCaptcha(page: Page) {
