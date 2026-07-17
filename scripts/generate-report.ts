@@ -31,6 +31,13 @@ const summary = {
   testRunId: process.env.TEST_RUN_ID ?? 'RUN-20260715-001',
   generatedAt: new Date().toISOString(),
   checksum: createHash('sha256').update(JSON.stringify(results)).digest('hex'),
+  counts: {
+    total: results.length,
+    pass: results.filter((result) => result.status === 'Pass').length,
+    fail: results.filter((result) => result.status === 'Fail').length,
+    blocked: results.filter((result) => result.status === 'Blocked').length,
+    infrastructureError: results.filter((result) => result.status === 'Infrastructure Error').length
+  },
   results
 };
 

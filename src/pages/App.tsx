@@ -593,16 +593,6 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     }
 
     setAutomationMessage('Đang gửi yêu cầu chạy Playwright lên GitHub Actions...');
-    const scenarioPayload = automatedCases.map((testCase) => ({
-      id: testCase.code,
-      useCaseCode: useCases.find((useCase) => testCase.useCaseIds.includes(useCase.id))?.code ?? '',
-      title: testCase.title,
-      steps: testCase.steps,
-      expectedResult: testCase.expectedResult,
-      precondition: ''
-    }));
-    const compactScenarioPayload = JSON.stringify(scenarioPayload).length < 55000 ? scenarioPayload : [];
-
     try {
       const response = await fetch('/.netlify/functions/run-automation', {
         method: 'POST',
@@ -617,8 +607,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           suiteTag: automationForm.suiteTag,
           retryPolicy: automationForm.retryPolicy,
           maxCases: automationForm.maxCases,
-          transactionCodes: automatedCases.map((testCase) => testCase.code),
-          scenarios: compactScenarioPayload
+          transactionCodes: automatedCases.map((testCase) => testCase.code)
         })
       });
       const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; dispatchMode?: string; error?: string; detail?: string; requiredEnv?: string[]; repository?: string; workflow?: string; ref?: string; requiredPermission?: string };
@@ -1016,8 +1005,8 @@ function runnerTypeLabel(type: TestResult['runnerType']): string {
 
 function automationRunLabel(run: AutomationRunStatus): string {
   if (run.status !== 'completed') return 'Đang chạy';
-  if (run.conclusion === 'success') return 'Đạt';
-  if (run.conclusion === 'failure') return 'Không đạt';
+  if (run.conclusion === 'success') return 'Đã chạy xong';
+  if (run.conclusion === 'failure') return 'Có ca không đạt';
   if (run.conclusion === 'cancelled') return 'Đã hủy';
   return run.conclusion ?? run.status;
 }

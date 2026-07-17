@@ -54,6 +54,9 @@ jobs:
       - run: npm run report:results
         if: always()
 
+      - run: npm run report:github
+        if: always()
+
       - run: npm run publish:results
         if: always()
 

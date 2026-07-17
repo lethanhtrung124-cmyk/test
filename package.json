@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:target": "playwright test tests/target-app/specs",
     "report:results": "tsx scripts/generate-report.ts",
+    "report:github": "tsx scripts/write-github-summary.ts",
     "publish:results": "tsx scripts/publish-results.ts"
   },
   "dependencies": {
