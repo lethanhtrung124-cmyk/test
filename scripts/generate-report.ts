@@ -11,7 +11,7 @@ interface PlaywrightJsonReport {
 const report = JSON.parse(readFileSync(resultsPath, 'utf8')) as PlaywrightJsonReport;
 const results = report.suites.flatMap((suite) =>
   suite.specs.flatMap((spec) =>
-    spec.tests.map((testCase) => {
+    spec.tests.filter((testCase) => testCase.results.length > 0).map((testCase) => {
       const latest = testCase.results[testCase.results.length - 1];
       const ids = extractIds(spec.title);
       return {

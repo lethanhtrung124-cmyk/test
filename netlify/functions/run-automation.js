@@ -31,7 +31,8 @@ exports.handler = async (event) => {
     browser: text(payload.browser || 'chromium'),
     account_role: text(payload.accountRole),
     project_code: text(payload.projectCode),
-    transaction_codes: Array.isArray(payload.transactionCodes) ? payload.transactionCodes.join(',') : '',
+    transaction_codes: normalizeCodes(payload.transactionCodes, payload.maxCases).join(','),
+    max_cases: String(clampMaxCases(payload.maxCases)),
     scenarios: normalizeScenarios(payload.scenarios)
   };
 
@@ -69,6 +70,22 @@ exports.handler = async (event) => {
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeCodes(value, maxCases) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  for (const item of value) {
+    const code = text(item).replace(/\s+/g, '').toUpperCase();
+    if (code) seen.add(code);
+  }
+  return [...seen].slice(0, clampMaxCases(maxCases));
+}
+
+function clampMaxCases(value) {
+  const parsed = Number.parseInt(String(value || '10'), 10);
+  if (!Number.isFinite(parsed)) return 10;
+  return Math.max(1, Math.min(parsed, 50));
 }
 
 function normalizeScenarios(value) {

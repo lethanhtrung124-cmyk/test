@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.TEST_BASE_URL ?? 'http://localhost:4173';
+const isScenarioRun = process.env.TEST_SUITE === '@suite:scenario';
 
 export default defineConfig({
   testDir: '.',
@@ -11,7 +12,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI && !isScenarioRun ? 2 : 0,
   workers: process.env.CI ? 2 : undefined,
   reporter: [
     ['list'],
@@ -21,9 +22,9 @@ export default defineConfig({
   ],
   use: {
     baseURL,
-    trace: 'on-first-retry',
+    trace: process.env.PLAYWRIGHT_TRACE === 'on' ? 'on-first-retry' : 'off',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: process.env.PLAYWRIGHT_VIDEO === 'on' ? 'retain-on-failure' : 'off',
     actionTimeout: 15_000
   },
   projects: [

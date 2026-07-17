@@ -486,7 +486,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [runForm, setRunForm] = useState({ code: `RUN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(testRuns.length + 1).padStart(3, '0')}`, suite: 'functional', status: 'Planning' as TestRun['status'], useCaseIds: useCases.map((useCase) => useCase.id) });
   const [resultForm, setResultForm] = useState({ testRunId: selectedRun?.id ?? testRuns[0]?.id ?? '', testCaseId: testCases[0]?.id ?? '', status: 'Pass' as ResultStatus, actualResult: '' });
   const [defectForm, setDefectForm] = useState({ resultId: results.find((item) => item.status === 'Fail')?.id ?? results[0]?.id ?? '', title: '', severity: 'Medium' as Defect['severity'], priority: 'P1' as Defect['priority'] });
-  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:scenario', retryPolicy: '1', note: '' });
+  const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:scenario', retryPolicy: '1', maxCases: '10', note: '' });
   const [automationMessage, setAutomationMessage] = useState('');
   const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
   const [automationStatusMessage, setAutomationStatusMessage] = useState('');
@@ -581,9 +581,11 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     }
 
     const runCaseIds = getRunUseCaseIds(selectedRun, useCases);
-    const automatedCases = testCases.filter((testCase) =>
+    const uniqueAutomatedCases = uniqueByCode(testCases.filter((testCase) =>
       testCase.useCaseIds.some((useCaseId) => runCaseIds.includes(useCaseId))
-    );
+    ));
+    const maxCases = Math.max(1, Math.min(Number.parseInt(automationForm.maxCases, 10) || 10, 50));
+    const automatedCases = uniqueAutomatedCases.slice(0, maxCases);
 
     if (automatedCases.length === 0) {
       setAutomationMessage('Đợt kiểm thử đang chọn chưa có giao dịch kiểm thử để chạy tự động.');
@@ -614,6 +616,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           browser: automationForm.browser,
           suiteTag: automationForm.suiteTag,
           retryPolicy: automationForm.retryPolicy,
+          maxCases: automationForm.maxCases,
           transactionCodes: automatedCases.map((testCase) => testCase.code),
           scenarios: compactScenarioPayload
         })
@@ -629,7 +632,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         return;
       }
 
-      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length} giao dịch qua ${payload.dispatchMode ?? 'GitHub Actions'}. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
+      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length}/${uniqueAutomatedCases.length} giao dịch qua ${payload.dispatchMode ?? 'GitHub Actions'}. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
       setTimeout(() => {
         void refreshAutomationStatus();
       }, 3000);
@@ -838,6 +841,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
               <label>Số lần chạy lại<input type="number" min="0" max="3" value={automationForm.retryPolicy} onChange={(event) => setAutomationForm({ ...automationForm, retryPolicy: event.target.value })} /></label>
             </div>
+            <label>Số ca tối đa mỗi lượt<input type="number" min="1" max="50" value={automationForm.maxCases} onChange={(event) => setAutomationForm({ ...automationForm, maxCases: event.target.value })} /></label>
             <label>Bộ script tự động<select value={automationForm.suiteTag} onChange={(event) => setAutomationForm({ ...automationForm, suiteTag: event.target.value })}><option value="@suite:scenario">Kịch bản Word - chạy từng bước và đối chiếu mong đợi</option><option value="@suite:smoke">Smoke - kiểm tra URL hệ thống phản hồi</option><option value="">Tất cả script tự động đã cấu hình</option></select></label>
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
             <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
@@ -912,6 +916,16 @@ function createId(prefix: string): string {
 
 function nextCode(prefix: string, value: number): string {
   return `${prefix}-${String(value).padStart(3, '0')}`;
+}
+
+function uniqueByCode<T extends { code: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const code = row.code.trim().toUpperCase();
+    if (seen.has(code)) return false;
+    seen.add(code);
+    return true;
+  });
 }
 
 interface ImportedTestCase {

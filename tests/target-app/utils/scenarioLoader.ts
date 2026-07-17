@@ -36,9 +36,11 @@ export function loadTargetScenarios(): TargetScenario[] {
       .map(normalizeScenarioId)
       .filter(Boolean)
   );
+  const maxCases = clampMaxCases(process.env.TEST_MAX_CASES);
 
   const scenarios = [...scenarioById.values()];
-  return requestedCodes.size > 0 ? scenarios.filter((scenario) => requestedCodes.has(scenario.id)) : scenarios;
+  const selected = requestedCodes.size > 0 ? scenarios.filter((scenario) => requestedCodes.has(scenario.id)) : scenarios;
+  return selected.slice(0, maxCases);
 }
 
 export function normalizeScenarioId(value: string): string {
@@ -60,4 +62,10 @@ function readPayloadScenarios(): TargetScenario[] {
   } catch {
     return [];
   }
+}
+
+function clampMaxCases(value: string | undefined): number {
+  const parsed = Number.parseInt(value || '10', 10);
+  if (!Number.isFinite(parsed)) return 10;
+  return Math.max(1, Math.min(parsed, 50));
 }

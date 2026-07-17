@@ -14,10 +14,13 @@ jobs:
       TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
       PROJECT_CODE: ${{ github.event.client_payload.project_code || 'KTKT' }}
       TEST_BROWSER: ${{ github.event.client_payload.browser || 'chromium' }}
-      TEST_SUITE: ${{ github.event.client_payload.suite }}
+      TEST_SUITE: ${{ github.event.client_payload.suite || '@suite:scenario' }}
       TEST_TRANSACTION_CODES: ${{ github.event.client_payload.transaction_codes }}
+      TEST_MAX_CASES: ${{ github.event.client_payload.max_cases || '10' }}
       TEST_SCENARIOS_JSON: ${{ toJson(github.event.client_payload.scenarios) }}
       PLAYWRIGHT_SKIP_WEBSERVER: true
+      PLAYWRIGHT_VIDEO: off
+      PLAYWRIGHT_TRACE: off
       ENVIRONMENT_CODE: UAT
       APPLICATION_VERSION: v2.0.0
       RESULTS_INGEST_URL: ${{ secrets.RESULTS_INGEST_URL }}
@@ -33,7 +36,7 @@ jobs:
 
       - run: npm run build
 
-      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npx playwright install --with-deps "${TEST_BROWSER}"
 
       - name: Run Playwright automation
         run: |
@@ -56,4 +59,9 @@ jobs:
           name: playwright-evidence-${{ env.TEST_RUN_ID }}
           path: |
             playwright-report
-            test-results
+            test-results/**/*.png
+            test-results/**/*.txt
+            test-results/**/*.md
+            test-results/results.json
+            test-results/summary.json
+            test-results/junit.xml
