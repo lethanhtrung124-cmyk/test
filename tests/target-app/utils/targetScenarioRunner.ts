@@ -86,6 +86,7 @@ async function login(page: Page) {
   await usernameField.fill(username);
   await expect(passwordField, 'Không tìm thấy ô mật khẩu trên màn hình đăng nhập').toBeVisible();
   await passwordField.fill(password);
+  await solveArithmeticCaptcha(page);
 
   const loginButton = page.getByRole('button', { name: /đăng nhập|login|sign in|submit/i }).first();
   if (await loginButton.count()) {
@@ -95,7 +96,54 @@ async function login(page: Page) {
   }
 
   await page.waitForLoadState('networkidle').catch(() => undefined);
-  await expect(page.locator('body')).not.toContainText(/sai mật khẩu|không đúng|invalid|unauthorized/i, { timeout: 5000 });
+  await expect(page.locator('body')).not.toContainText(/sai mật khẩu|không đúng|giải đúng phép tính|invalid|unauthorized/i, { timeout: 5000 });
+}
+
+async function solveArithmeticCaptcha(page: Page) {
+  const text = await readVisibleText(page);
+  const match = text.match(/(\d+)\s*([+\-xX*\/×])\s*(\d+)\s*=\s*\?/);
+  if (!match) return;
+
+  const left = Number(match[1]);
+  const operator = match[2];
+  const right = Number(match[3]);
+  const answer = calculateCaptcha(left, operator, right);
+  if (!Number.isFinite(answer)) return;
+
+  const answerText = String(answer);
+  const spinbutton = page.getByRole('spinbutton').first();
+  if ((await spinbutton.count()) && (await spinbutton.isVisible().catch(() => false))) {
+    await spinbutton.fill(answerText);
+    return;
+  }
+
+  const inputs = await page.locator('input:not([type="hidden"]):not([type="password"]), textarea').all();
+  for (const input of inputs.reverse()) {
+    if (!(await input.isVisible().catch(() => false))) continue;
+    const value = await input.inputValue().catch(() => '');
+    if (!value) {
+      await input.fill(answerText);
+      return;
+    }
+  }
+}
+
+function calculateCaptcha(left: number, operator: string, right: number) {
+  switch (operator) {
+    case '+':
+      return left + right;
+    case '-':
+      return left - right;
+    case 'x':
+    case 'X':
+    case '*':
+    case '×':
+      return left * right;
+    case '/':
+      return right === 0 ? Number.NaN : left / right;
+    default:
+      return Number.NaN;
+  }
 }
 
 async function chooseFunction(page: Page, scenario: TargetScenario) {
