@@ -83,7 +83,32 @@ async function readArtifactSummary({ token, artifact }) {
   const summaryText = readZipTextFile(zip, 'test-results/summary.json');
   if (!summaryText) return null;
 
-  return JSON.parse(summaryText);
+  return normalizeSummary(JSON.parse(summaryText));
+}
+
+function normalizeSummary(summary) {
+  const results = Array.isArray(summary.results) ? summary.results : [];
+  const counts = summary.counts || {
+    total: results.length,
+    pass: results.filter((result) => result.status === 'Pass').length,
+    fail: results.filter((result) => result.status === 'Fail').length,
+    blocked: results.filter((result) => result.status === 'Blocked').length,
+    infrastructureError: results.filter((result) => result.status === 'Infrastructure Error').length
+  };
+
+  return {
+    testRunId: summary.testRunId || '',
+    generatedAt: summary.generatedAt || '',
+    checksum: summary.checksum || '',
+    counts: {
+      total: Number(counts.total) || 0,
+      pass: Number(counts.pass) || 0,
+      fail: Number(counts.fail) || 0,
+      blocked: Number(counts.blocked) || 0,
+      infrastructureError: Number(counts.infrastructureError) || 0
+    },
+    results
+  };
 }
 
 function readZipTextFile(zip, targetPath) {

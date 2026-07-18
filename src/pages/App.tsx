@@ -885,14 +885,14 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
                     {run.summary ? (
                       <div className="automation-summary">
                         <div className="summary-counts">
-                          <span>Tổng: <strong>{run.summary.counts.total}</strong></span>
-                          <span>Đạt: <strong>{run.summary.counts.pass}</strong></span>
-                          <span>Không đạt: <strong>{run.summary.counts.fail}</strong></span>
-                          <span>Bị chặn: <strong>{run.summary.counts.blocked}</strong></span>
-                          <span>Lỗi hạ tầng: <strong>{run.summary.counts.infrastructureError}</strong></span>
+                          <span>Tổng: <strong>{run.summary.counts?.total ?? run.summary.results?.length ?? 0}</strong></span>
+                          <span>Đạt: <strong>{run.summary.counts?.pass ?? countAutomationResults(run.summary.results, 'Pass')}</strong></span>
+                          <span>Không đạt: <strong>{run.summary.counts?.fail ?? countAutomationResults(run.summary.results, 'Fail')}</strong></span>
+                          <span>Bị chặn: <strong>{run.summary.counts?.blocked ?? countAutomationResults(run.summary.results, 'Blocked')}</strong></span>
+                          <span>Lỗi hạ tầng: <strong>{run.summary.counts?.infrastructureError ?? countAutomationResults(run.summary.results, 'Infrastructure Error')}</strong></span>
                         </div>
                         <div className="automation-result-list">
-                          {run.summary.results.map((result, index) => (
+                          {(run.summary.results ?? []).map((result, index) => (
                             <div className="automation-result-row" key={`${run.id}-${result.testCaseCode ?? index}`}>
                               <Badge tone={automationResultTone(result.status)}>{automationResultLabel(result.status)}</Badge>
                               <span>{result.useCaseCode ?? 'UC'} / {result.testCaseCode ?? 'Giao dịch'}</span>
@@ -1067,6 +1067,10 @@ function automationResultTone(status: ResultStatus): BadgeTone {
   if (status === 'Fail' || status === 'Infrastructure Error') return 'danger';
   if (status === 'Blocked' || status === 'Flaky') return 'warning';
   return 'neutral';
+}
+
+function countAutomationResults(results: AutomationRunResult[] | undefined, status: ResultStatus): number {
+  return (results ?? []).filter((result) => result.status === status).length;
 }
 
 function runStatusLabel(status: TestRun['status']): string {
