@@ -24,6 +24,18 @@ exports.handler = async (event) => {
     return json(400, { error: 'Invalid JSON body' });
   }
 
+  const scenarios = normalizeScenarios(payload.scenarios);
+  const scenarioCodes = scenarios.map((scenario) => scenario.id);
+  const requestedCodes = scenarioCodes.length > 0 ? scenarioCodes : normalizeCodes(payload.transactionCodes, payload.maxCases);
+  const isScenarioSuite = text(payload.suiteTag || '@suite:scenario').includes('@suite:scenario');
+
+  if (isScenarioSuite && scenarios.length === 0) {
+    return json(400, {
+      error: 'Scenario payload is required for Word-script automation',
+      detail: 'APP chua gui noi dung kich ban kiem thu. Hay tai lai APP bang Ctrl+F5, import lai file kich ban vao dung dot kiem thu, roi chay lai.'
+    });
+  }
+
   const inputs = {
     test_run_id: text(payload.testRunCode || payload.testRunId),
     base_url: text(payload.baseUrl),
@@ -31,9 +43,9 @@ exports.handler = async (event) => {
     browser: text(payload.browser || 'chromium'),
     account_role: text(payload.accountRole),
     project_code: text(payload.projectCode),
-    transaction_codes: normalizeCodes(payload.transactionCodes, payload.maxCases).join(','),
-    max_cases: String(clampMaxCases(payload.maxCases)),
-    scenarios: normalizeScenarios(payload.scenarios)
+    transaction_codes: requestedCodes.join(','),
+    max_cases: String(Math.max(requestedCodes.length, clampMaxCases(payload.maxCases))),
+    scenarios
   };
 
   if (!inputs.test_run_id || !inputs.base_url) {

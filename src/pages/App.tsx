@@ -704,8 +704,9 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         onAddTestCase({ id: createId('tc'), code: importedCase.id, scenarioId: scenario.id, useCaseIds: [targetUseCase.id], title: importedCase.title, priority: 'P1', suite: 'functional', automationStatus: 'Manual', expectedResult: importedCase.expectedResult, steps: importedCase.steps }, scenario);
         importedCount += 1;
       }
-      if (selectedRun) onUpdateRunScope(selectedRun.id, [...new Set([...scopedRunIds, ...importedUseCaseIds])]);
-      setRunForm((current) => ({ ...current, useCaseIds: [...new Set([...current.useCaseIds, ...importedUseCaseIds])] }));
+      const importedScope = [...importedUseCaseIds];
+      if (selectedRun) onUpdateRunScope(selectedRun.id, importedScope);
+      setRunForm((current) => ({ ...current, useCaseIds: importedScope }));
       setImportMessage(`Đã import ${importedUseCaseIds.size} UC và ${importedCount} giao dịch kiểm thử từ file ${file.name}.`);
       event.target.value = '';
     } catch (error) {
