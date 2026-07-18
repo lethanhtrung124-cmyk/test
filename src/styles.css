@@ -541,6 +541,250 @@ td span {
   font-weight: 800;
 }
 
+.entry-workflow {
+  display: grid;
+  gap: 16px;
+}
+
+.workflow-hero {
+  overflow: hidden;
+}
+
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workflow-steps span {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  border: 1px solid #cfe2dc;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f2fbf7;
+  color: #115e59;
+  font-weight: 800;
+  text-align: center;
+}
+
+.workflow-node {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.node-marker {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #117c6f;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.node-body {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(36, 50, 45, 0.06);
+}
+
+.node-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.node-heading p {
+  margin: 0;
+  color: #5c6d69;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.node-heading h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+}
+
+.compact-grid,
+.script-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+  gap: 12px;
+}
+
+.info-tile,
+.script-summary div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e2e8e5;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f7faf9;
+}
+
+.info-tile span,
+.script-summary span,
+.scope-panel span {
+  color: #5c6d69;
+  font-size: 13px;
+}
+
+.inline-create,
+.automation-official-form {
+  display: grid;
+  gap: 10px;
+}
+
+.inline-create {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.run-create {
+  grid-template-columns: minmax(220px, 1fr) auto;
+  max-width: 560px;
+}
+
+.inline-create label,
+.automation-official-form label {
+  display: grid;
+  gap: 6px;
+  color: #485653;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.inline-create input,
+.automation-official-form input,
+.automation-official-form select {
+  width: 100%;
+  border: 1px solid #ccd8d4;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfdfc;
+  font: inherit;
+}
+
+.inline-create button,
+.automation-official-form button,
+.attachment-row button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #117c6f;
+  color: #ffffff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scope-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.scope-list {
+  display: grid;
+  gap: 8px;
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.scope-list label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.script-import-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.file-import.official {
+  max-width: none;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.attachment-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #dce4e1;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdfc;
+}
+
+.attachment-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.attachment-row small {
+  color: #697975;
+  font-weight: 600;
+}
+
+.attachment-row button {
+  background: #e8eeeb;
+  color: #485653;
+}
+
+.empty-attachment {
+  color: #697975;
+  font-size: 14px;
+}
+
+.official-results {
+  display: grid;
+  gap: 12px;
+}
+
+.result-overview {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.artifact-actions a {
+  border: 1px solid #b9d8d0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #117c6f;
+  background: #f2fbf7;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .automation-results {
   display: grid;
   gap: 10px;
@@ -641,8 +885,17 @@ td span {
   .status-grid,
   .form-grid,
   .management-grid,
-  .automation-flow {
+  .automation-flow,
+  .workflow-steps,
+  .result-overview,
+  .inline-create {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .compact-grid,
+  .script-summary,
+  .run-create {
+    grid-template-columns: 1fr;
   }
 
   .summary-counts,
@@ -674,7 +927,14 @@ td span {
   .management-grid,
   .inline-fields,
   .mode-switch,
-  .automation-flow {
+  .automation-flow,
+  .workflow-steps,
+  .result-overview,
+  .inline-create {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-node {
     grid-template-columns: 1fr;
   }
 

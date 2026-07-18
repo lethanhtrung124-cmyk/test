@@ -41,7 +41,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'runs', label: 'Kết quả kiểm thử' },
   { id: 'defects', label: 'Lỗi' },
   { id: 'evidence', label: 'Minh chứng & nhật ký' },
-  { id: 'entry', label: 'Nhập dữ liệu' }
+  { id: 'entry', label: 'Nhập liệu kiểm thử' }
 ];
 
 export function App() {
@@ -505,7 +505,7 @@ interface AutomationRunResult {
 }
 
 function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
-  const [entryMode, setEntryMode] = useState<'manual' | 'automation'>('manual');
+  const [entryMode, setEntryMode] = useState<'manual' | 'automation'>('automation');
   const [projectForm, setProjectForm] = useState({ code: nextCode('PRJ-NEW', projects.length + 1), name: '', ownerUnit: '' });
   const [useCaseForm, setUseCaseForm] = useState({ code: '', title: '', module: 'general' });
   const [testCaseForm, setTestCaseForm] = useState({ code: '', title: '', useCaseId: useCases[0]?.id ?? '', expectedResult: '', steps: '', priority: 'P1' as TestCase['priority'], suite: 'functional' as TestCase['suite'], automationStatus: 'Manual' as TestCase['automationStatus'] });
@@ -517,6 +517,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
   const [automationStatusMessage, setAutomationStatusMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ id: string; name: string; size: number; importedAt: string }>>([]);
   const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
 
   useEffect(() => {
@@ -707,6 +708,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       const importedScope = [...importedUseCaseIds];
       if (selectedRun) onUpdateRunScope(selectedRun.id, importedScope);
       setRunForm((current) => ({ ...current, useCaseIds: importedScope }));
+      setAttachedFiles((current) => [...current, { id: createId('file'), name: file.name, size: file.size, importedAt: new Date().toISOString() }]);
       setImportMessage(`Đã import ${importedUseCaseIds.size} UC và ${importedCount} giao dịch kiểm thử từ file ${file.name}.`);
       event.target.value = '';
     } catch (error) {
@@ -714,6 +716,206 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       event.target.value = '';
     }
   }
+
+  const currentRunUseCaseIds = getRunUseCaseIds(selectedRun, useCases);
+  const currentRunCases = uniqueByCode(testCases.filter((testCase) => testCase.useCaseIds.some((useCaseId) => currentRunUseCaseIds.includes(useCaseId))));
+  const currentRunUseCaseCount = new Set(currentRunCases.flatMap((testCase) => testCase.useCaseIds)).size;
+  const latestAutomationRun = automationRuns[0];
+  const latestSummary = latestAutomationRun?.summary;
+  const latestUcStats = summarizeAutomationUseCases(latestSummary?.results ?? []);
+  const selectedRunId = selectedRun?.id;
+
+  return (
+    <div className="entry-workflow">
+      <section className="panel workflow-hero">
+        <div className="panel-heading">
+          <div>
+            <p>Nhập liệu kiểm thử</p>
+            <h2>Quy trình triển khai kiểm thử tự động chính thức</h2>
+          </div>
+          <Database aria-hidden />
+        </div>
+        <div className="workflow-steps" aria-label="Quy trình nhập liệu kiểm thử">
+          <span>Chọn dự án</span>
+          <span>Đợt kiểm thử</span>
+          <span>Kịch bản kiểm thử</span>
+          <span>Chạy kiểm thử</span>
+          <span>Kết quả</span>
+        </div>
+      </section>
+
+      <section className="workflow-node">
+        <div className="node-marker">1</div>
+        <div className="node-body">
+          <div className="node-heading">
+            <div>
+              <p>Chọn dự án</p>
+              <h3>{selectedProject ? `${selectedProject.code} - ${selectedProject.name}` : 'Chưa chọn dự án'}</h3>
+            </div>
+            <Badge tone={selectedProject ? 'success' : 'warning'}>{selectedProject ? 'Đã chọn' : 'Cần chọn'}</Badge>
+          </div>
+          <div className="compact-grid">
+            <div className="info-tile">
+              <span>Dự án hiện tại</span>
+              <strong>{selectedProject?.name ?? '-'}</strong>
+            </div>
+            <form className="inline-create" onSubmit={submitProject}>
+              <label>Mã dự án<input value={projectForm.code} onChange={(event) => setProjectForm({ ...projectForm, code: event.target.value })} required /></label>
+              <label>Tên dự án<input value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} required /></label>
+              <label>Đơn vị quản lý<input value={projectForm.ownerUnit} onChange={(event) => setProjectForm({ ...projectForm, ownerUnit: event.target.value })} required /></label>
+              <button type="submit">Tạo dự án</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section className="workflow-node">
+        <div className="node-marker">2</div>
+        <div className="node-body">
+          <div className="node-heading">
+            <div>
+              <p>Đợt kiểm thử</p>
+              <h3>{selectedRun ? selectedRun.code : 'Tạo hoặc chọn đợt kiểm thử'}</h3>
+            </div>
+            <Badge tone={selectedRun ? 'info' : 'warning'}>{selectedRun ? runStatusLabel(selectedRun.status) : 'Chưa có đợt'}</Badge>
+          </div>
+          <form className="inline-create run-create" onSubmit={submitRun}>
+            <label>Mã đợt kiểm thử<input value={runForm.code} onChange={(event) => setRunForm({ ...runForm, code: event.target.value })} required /></label>
+            <button type="submit">Tạo đợt kiểm thử</button>
+          </form>
+          <div className="scope-panel">
+            <div>
+              <strong>Cập nhật phạm vi UC</strong>
+              <span>{currentRunUseCaseIds.length} UC đang thuộc đợt kiểm thử hiện tại</span>
+            </div>
+            {selectedRunId ? (
+              <div className="scope-list">
+                {useCases.map((useCase) => (
+                  <label key={useCase.id}>
+                    <input type="checkbox" checked={currentRunUseCaseIds.includes(useCase.id)} onChange={(event) => onUpdateRunScope(selectedRunId, toggleValue(currentRunUseCaseIds, useCase.id, event.target.checked))} />
+                    <span>{useCase.code} - {useCase.title}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="plain-text">Tạo đợt kiểm thử trước khi cập nhật phạm vi UC.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="workflow-node">
+        <div className="node-marker">3</div>
+        <div className="node-body">
+          <div className="node-heading">
+            <div>
+              <p>Chuẩn bị kịch bản kiểm thử</p>
+              <h3>Đính kèm file kịch bản Word chứa UC và giao dịch</h3>
+            </div>
+            <Badge tone={currentRunCases.length ? 'success' : 'warning'}>{currentRunCases.length} giao dịch</Badge>
+          </div>
+          <div className="script-import-panel">
+            <label className="file-import official">
+              <span>Đính kèm hoặc bổ sung file .docx</span>
+              <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importDocx} />
+            </label>
+            {importMessage && <p className="form-note">{importMessage}</p>}
+            <div className="script-summary">
+              <div><span>UC trong phạm vi</span><strong>{currentRunUseCaseCount}</strong></div>
+              <div><span>Giao dịch đã nhập</span><strong>{currentRunCases.length}</strong></div>
+              <div><span>Nguồn dữ liệu</span><strong>File kịch bản</strong></div>
+            </div>
+            <div className="attachment-list">
+              {attachedFiles.length ? (
+                attachedFiles.map((file) => (
+                  <div className="attachment-row" key={file.id}>
+                    <FileCheck2 size={18} />
+                    <span>{file.name}<small>{formatBytes(file.size)} - {new Date(file.importedAt).toLocaleString('vi-VN')}</small></span>
+                    <button type="button" onClick={() => setAttachedFiles((current) => current.filter((item) => item.id !== file.id))}>Xóa</button>
+                  </div>
+                ))
+              ) : (
+                <span className="empty-attachment">Chưa có file kịch bản được import cho đợt này.</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="workflow-node">
+        <div className="node-marker">4</div>
+        <div className="node-body">
+          <div className="node-heading">
+            <div>
+              <p>Kiểm thử tự động</p>
+              <h3>Nhập môi trường và tài khoản kiểm thử</h3>
+            </div>
+            <PlayCircle aria-hidden />
+          </div>
+          <form className="automation-official-form" onSubmit={submitAutomation}>
+            <label>Link ứng dụng cần kiểm thử<input value={automationForm.baseUrl} onChange={(event) => setAutomationForm({ ...automationForm, baseUrl: event.target.value })} placeholder="http://113.160.48.101:8080/" required /></label>
+            <label>Tài khoản kiểm thử<input value={automationForm.accountRole} onChange={(event) => setAutomationForm({ ...automationForm, accountRole: event.target.value })} placeholder="Vai trò hoặc ghi chú tài khoản" /></label>
+            <div className="inline-fields">
+              <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
+              <label>Số giao dịch tối đa<input type="number" min="1" max="50" value={automationForm.maxCases} onChange={(event) => setAutomationForm({ ...automationForm, maxCases: event.target.value })} /></label>
+            </div>
+            <button type="submit">Chạy kiểm thử</button>
+            {automationMessage && <p className="form-note">{automationMessage}</p>}
+          </form>
+        </div>
+      </section>
+
+      <section className="workflow-node">
+        <div className="node-marker">5</div>
+        <div className="node-body">
+          <div className="node-heading">
+            <div>
+              <p>Kết quả kiểm thử</p>
+              <h3>Tổng quan UC, giao dịch và file minh chứng</h3>
+            </div>
+            <button className="secondary-action" type="button" onClick={refreshAutomationStatus}>Cập nhật kết quả</button>
+          </div>
+          {automationStatusMessage && <p className="form-note">{automationStatusMessage}</p>}
+          {latestSummary ? (
+            <div className="official-results">
+              <div className="summary-counts result-overview">
+                <span>Tổng UC: <strong>{latestUcStats.total}</strong></span>
+                <span>UC đạt: <strong>{latestUcStats.pass}</strong></span>
+                <span>UC không đạt: <strong>{latestUcStats.fail}</strong></span>
+                <span>Tổng giao dịch: <strong>{latestSummary.counts?.total ?? latestSummary.results?.length ?? 0}</strong></span>
+                <span>Giao dịch đạt: <strong>{latestSummary.counts?.pass ?? countAutomationResults(latestSummary.results, 'Pass')}</strong></span>
+                <span>Giao dịch không đạt: <strong>{latestSummary.counts?.fail ?? countAutomationResults(latestSummary.results, 'Fail')}</strong></span>
+              </div>
+              <div className="automation-result-list official">
+                {(latestSummary.results ?? []).map((result, index) => (
+                  <div className="automation-result-row" key={`${latestAutomationRun?.id}-${result.testCaseCode ?? index}`}>
+                    <Badge tone={automationResultTone(result.status)}>{automationResultLabel(result.status)}</Badge>
+                    <span>{result.useCaseCode ?? 'UC'} / {result.testCaseCode ?? 'Giao dịch'}</span>
+                    <div className="automation-result-detail">
+                      <span>{result.title}</span>
+                      {result.status !== 'Pass' && result.failureReason ? <small>Nguyên nhân: {result.failureReason}</small> : null}
+                      {result.status !== 'Pass' && !result.failureReason && result.errorMessage ? <small>Lỗi: {result.errorMessage}</small> : null}
+                    </div>
+                    <span>{result.durationMs} ms</span>
+                  </div>
+                ))}
+              </div>
+              <div className="artifact-actions">
+                <a href={latestAutomationRun?.url} target="_blank" rel="noreferrer">Mở workflow</a>
+                {(latestAutomationRun?.artifacts ?? []).map((artifact) => (
+                  <a key={artifact.id} href={artifact.url} target="_blank" rel="noreferrer">Tải file kết quả: {artifact.name}</a>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="plain-text">Chưa có kết quả. Bấm “Chạy kiểm thử” hoặc “Cập nhật kết quả” để lấy artifact mới nhất từ GitHub Actions.</p>
+          )}
+        </div>
+      </section>
+
+      <button className="secondary-action" type="button" onClick={onReset}>Khôi phục dữ liệu mẫu</button>
+    </div>
+  );
 
   return (
     <div className="stack">
@@ -763,14 +965,14 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           <button type="submit">Tạo đợt kiểm thử</button>
         </form>
 
-        {selectedRun && (
+        {selectedRunId && (
           <section className="entry-form">
             <h3>Cập nhật phạm vi UC của đợt đang chọn</h3>
             <fieldset className="checkbox-list">
-              <legend>{selectedRun.code}</legend>
+              <legend>{selectedRun?.code}</legend>
               {useCases.map((useCase) => (
                 <label key={useCase.id}>
-                  <input type="checkbox" checked={scopedRunIds.includes(useCase.id)} onChange={(event) => onUpdateRunScope(selectedRun.id, toggleValue(scopedRunIds, useCase.id, event.target.checked))} />
+                    <input type="checkbox" checked={scopedRunIds.includes(useCase.id)} onChange={(event) => onUpdateRunScope(selectedRunId!, toggleValue(scopedRunIds, useCase.id, event.target.checked))} />
                   <span>{useCase.code} - {useCase.title}</span>
                 </label>
               ))}
@@ -1095,6 +1297,26 @@ function automationResultTone(status: ResultStatus): BadgeTone {
 
 function countAutomationResults(results: AutomationRunResult[] | undefined, status: ResultStatus): number {
   return (results ?? []).filter((result) => result.status === status).length;
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 KB';
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function summarizeAutomationUseCases(results: AutomationRunResult[]) {
+  const byUseCase = new Map<string, AutomationRunResult[]>();
+  for (const result of results) {
+    const key = result.useCaseCode || result.testCaseCode?.match(/^(UC\.\d+)/i)?.[1] || 'UC';
+    byUseCase.set(key, [...(byUseCase.get(key) ?? []), result]);
+  }
+
+  const groups = [...byUseCase.values()];
+  const failedStatuses: ResultStatus[] = ['Fail', 'Blocked', 'Infrastructure Error'];
+  const fail = groups.filter((group) => group.some((result) => failedStatuses.includes(result.status))).length;
+  const pass = groups.filter((group) => group.length > 0 && group.every((result) => result.status === 'Pass')).length;
+  return { total: groups.length, pass, fail };
 }
 
 function runStatusLabel(status: TestRun['status']): string {
