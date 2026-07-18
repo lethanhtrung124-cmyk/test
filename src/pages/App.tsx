@@ -900,8 +900,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
                               <span>{result.useCaseCode ?? 'UC'} / {result.testCaseCode ?? 'Giao dịch'}</span>
                               <div className="automation-result-detail">
                                 <span>{result.title}</span>
-                                {result.failureReason ? <small>Nguyên nhân: {result.failureReason}</small> : null}
-                                {!result.failureReason && result.errorMessage ? <small>Lỗi: {result.errorMessage}</small> : null}
+                                {result.status !== 'Pass' && result.failureReason ? <small>Nguyên nhân: {result.failureReason}</small> : null}
+                                {result.status !== 'Pass' && !result.failureReason && result.errorMessage ? <small>Lỗi: {result.errorMessage}</small> : null}
                               </div>
                               <span>{result.durationMs} ms</span>
                             </div>

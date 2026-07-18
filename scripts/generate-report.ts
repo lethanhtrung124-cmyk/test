@@ -46,15 +46,16 @@ const results = specs.flatMap((spec) =>
       const attempts = testCase.results ?? [];
       const latest = attempts[attempts.length - 1];
       const ids = extractIds(spec.title);
+      const status = normalizeStatus(latest.status);
       return {
         title: spec.title,
         useCaseCode: ids.useCaseCode,
         testCaseCode: ids.testCaseCode,
-        status: normalizeStatus(latest.status),
+        status,
         durationMs: latest.duration,
         retryCount: latest.retry,
-        failureReason: extractFailureReason(latest),
-        errorMessage: sanitizeErrorMessage(latest.error?.message ?? latest.error?.value ?? ''),
+        failureReason: status === 'Pass' ? '' : extractFailureReason(latest),
+        errorMessage: status === 'Pass' ? '' : sanitizeErrorMessage(latest.error?.message ?? latest.error?.value ?? ''),
         commitSha: process.env.GITHUB_SHA ?? 'local-pilot'
       };
     })
