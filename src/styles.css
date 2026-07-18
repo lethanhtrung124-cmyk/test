@@ -601,6 +601,24 @@ td span {
   font-size: 0.86rem;
 }
 
+.automation-result-detail {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.automation-result-detail span,
+.automation-result-detail small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.automation-result-detail small {
+  color: #9f3412;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;

@@ -499,6 +499,8 @@ interface AutomationRunResult {
   status: ResultStatus;
   durationMs: number;
   retryCount: number;
+  failureReason?: string;
+  errorMessage?: string;
   commitSha?: string;
 }
 
@@ -896,7 +898,11 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
                             <div className="automation-result-row" key={`${run.id}-${result.testCaseCode ?? index}`}>
                               <Badge tone={automationResultTone(result.status)}>{automationResultLabel(result.status)}</Badge>
                               <span>{result.useCaseCode ?? 'UC'} / {result.testCaseCode ?? 'Giao dịch'}</span>
-                              <span>{result.title}</span>
+                              <div className="automation-result-detail">
+                                <span>{result.title}</span>
+                                {result.failureReason ? <small>Nguyên nhân: {result.failureReason}</small> : null}
+                                {!result.failureReason && result.errorMessage ? <small>Lỗi: {result.errorMessage}</small> : null}
+                              </div>
                               <span>{result.durationMs} ms</span>
                             </div>
                           ))}

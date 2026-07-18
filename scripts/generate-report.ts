@@ -19,7 +19,22 @@ interface PlaywrightSpec {
 }
 
 interface PlaywrightTest {
-  results?: Array<{ status: string; duration: number; retry: number }>;
+  results?: PlaywrightResult[];
+}
+
+interface PlaywrightResult {
+  status: string;
+  duration: number;
+  retry: number;
+  error?: {
+    message?: string;
+    value?: string;
+  };
+  attachments?: Array<{
+    name?: string;
+    contentType?: string;
+    body?: string;
+  }>;
 }
 
 const report = JSON.parse(readFileSync(resultsPath, 'utf8')) as PlaywrightJsonReport;
@@ -38,6 +53,8 @@ const results = specs.flatMap((spec) =>
         status: normalizeStatus(latest.status),
         durationMs: latest.duration,
         retryCount: latest.retry,
+        failureReason: extractFailureReason(latest),
+        errorMessage: sanitizeErrorMessage(latest.error?.message ?? latest.error?.value ?? ''),
         commitSha: process.env.GITHUB_SHA ?? 'local-pilot'
       };
     })
@@ -85,4 +102,71 @@ function extractIds(title: string) {
     useCaseCode: classicMatch?.[1]?.toUpperCase(),
     testCaseCode: classicMatch?.[2]?.toUpperCase()
   };
+}
+
+function extractFailureReason(result: PlaywrightResult): string {
+  const actualResult = decodeActualResultAttachment(result);
+  const attachedReason = actualResult.match(/Failure reason:\s*(.+)/i)?.[1]?.trim();
+  if (attachedReason) return attachedReason;
+
+  const message = result.error?.message ?? result.error?.value ?? '';
+  const messageReason = message.match(/Nguyen nhan:\s*(.+)/i)?.[1]?.trim();
+  if (messageReason) return sanitizeErrorMessage(messageReason);
+
+  const normalizedActual = normalizeVietnamese(actualResult || message);
+  if (isDashboard(normalizedActual)) {
+    return 'Runner da dang nhap nhung dang dung o trang tong quan/dashboard, chua mo dung chuc nang nghiep vu theo kich ban.';
+  }
+
+  if (/khong co du lieu|khong tim thay|no data|no results/.test(normalizedActual)) {
+    return 'He thong tra ve khong co du lieu theo dieu kien da nhap.';
+  }
+
+  const normalizedMessage = normalizeVietnamese(message);
+  if (normalizedMessage.includes('highcharts') || normalizedMessage.includes('outside of the viewport') || normalizedMessage.includes('intercepts pointer events')) {
+    return 'Runner click nham chu/nhan trong bieu do Highcharts thay vi nut chuc nang.';
+  }
+
+  if (normalizedMessage.includes('timeout')) {
+    return 'Runner het thoi gian cho khi thuc hien buoc tu dong.';
+  }
+
+  if (normalizedMessage.includes('expected') || normalizedMessage.includes('received')) {
+    return 'Ket qua thuc te khong khop voi cot ket qua mong doi.';
+  }
+
+  return '';
+}
+
+function decodeActualResultAttachment(result: PlaywrightResult): string {
+  const attachment = (result.attachments ?? []).find((item) => item.name?.includes('actual-result') && item.body);
+  if (!attachment?.body) return '';
+  try {
+    return Buffer.from(attachment.body, 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function sanitizeErrorMessage(message: string): string {
+  return message
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(' ');
+}
+
+function normalizeVietnamese(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+}
+
+function isDashboard(normalizedText: string): boolean {
+  return normalizedText.includes('tong so kiem toan vien') || normalizedText.includes('highcharts.com') || normalizedText.includes('co cau dnkt');
 }
