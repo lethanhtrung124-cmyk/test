@@ -612,6 +612,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     ));
     const maxCases = Math.max(1, Math.min(Number.parseInt(automationForm.maxCases, 10) || 10, 50));
     const automatedCases = uniqueAutomatedCases.slice(0, maxCases);
+    const automationScenarios = buildAutomationScenarios(automatedCases, useCases);
 
     if (automatedCases.length === 0) {
       setAutomationMessage('Đợt kiểm thử đang chọn chưa có giao dịch kiểm thử để chạy tự động.');
@@ -633,7 +634,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           suiteTag: automationForm.suiteTag,
           retryPolicy: automationForm.retryPolicy,
           maxCases: automationForm.maxCases,
-          transactionCodes: automatedCases.map((testCase) => testCase.code)
+          transactionCodes: automatedCases.map((testCase) => testCase.code),
+          scenarios: automationScenarios
         })
       });
       const payload = await response.json() as { workflowUrl?: string; evidenceLocation?: string; dispatchMode?: string; error?: string; detail?: string; requiredEnv?: string[]; repository?: string; workflow?: string; ref?: string; requiredPermission?: string };
@@ -967,6 +969,21 @@ function uniqueByCode<T extends { code: string }>(rows: T[]): T[] {
     if (seen.has(code)) return false;
     seen.add(code);
     return true;
+  });
+}
+
+function buildAutomationScenarios(testCases: TestCase[], useCases: UseCase[]) {
+  return testCases.map((testCase) => {
+    const useCase = testCase.useCaseIds.map((id) => useCases.find((item) => item.id === id)).find(Boolean);
+    return {
+      id: testCase.code,
+      useCaseCode: useCase?.code ?? testCase.code.match(/^(UC\.\d+)/i)?.[1]?.toUpperCase() ?? '',
+      title: testCase.title,
+      steps: testCase.steps,
+      expectedResult: testCase.expectedResult,
+      precondition: 'Người dùng đã được cấp tài khoản và phân quyền chức năng',
+      source: 'app-import'
+    };
   });
 }
 
