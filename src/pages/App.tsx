@@ -789,8 +789,10 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   async function refreshAutomationStatus(options: { silent?: boolean; requestedAt?: string } = {}) {
     if (!options.silent) setAutomationStatusMessage('Đang cập nhật kết quả kiểm thử tự động...');
     try {
-      const response = await fetch('/.netlify/functions/automation-status');
-      const payload = await response.json() as { runs?: AutomationRunStatus[]; error?: string; detail?: string; requiredEnv?: string[] };
+      const activeRequestedAt = options.requestedAt ?? automationRequestedAt;
+      const query = activeRequestedAt ? `?since=${encodeURIComponent(activeRequestedAt)}` : '';
+      const response = await fetch(`/.netlify/functions/automation-status${query}`);
+      const payload = await readJsonResponse(response) as { runs?: AutomationRunStatus[]; error?: string; detail?: string; requiredEnv?: string[] };
       if (!response.ok) {
         const requiredEnv = payload.requiredEnv?.length ? ` Cần cấu hình Netlify env: ${payload.requiredEnv.join(', ')}.` : '';
         setAutomationStatusMessage(`Chưa đọc được kết quả kiểm thử tự động: ${payload.error ?? response.statusText}. ${payload.detail ?? ''}${requiredEnv}`);
@@ -798,7 +800,6 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       }
       const runs = payload.runs ?? [];
       setAutomationRuns(runs);
-      const activeRequestedAt = options.requestedAt ?? automationRequestedAt;
       const matchingRun = findRunForRequest(runs, activeRequestedAt);
       const completedRunWithSummary = matchingRun?.summary ? matchingRun : runs.find((run) => run.status === 'completed' && run.summary);
 
@@ -1584,6 +1585,18 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+async function readJsonResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`Netlify function trả về rỗng với HTTP ${response.status}. Có thể function bị timeout hoặc response vượt giới hạn.`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Netlify function không trả JSON hợp lệ với HTTP ${response.status}: ${text.slice(0, 240)}`);
+  }
+}
+
 async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRunSummary, run?: AutomationRunStatus): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(sourceBuffer);
   const documentFile = zip.file('word/document.xml');
@@ -1616,7 +1629,7 @@ async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRun
 
       const result = results.get(transactionCode);
       fillWordCell(doc, cells[5], result ? documentResultLabel(result.status) : 'Chưa có kết quả');
-      const image = result?.evidenceImages?.[0];
+      const image = result?.evidenceImages?.find((item) => item.body);
       const imageRelId = image ? addEvidenceImage(zip, relsDoc, contentTypesDoc, image, imageIndex++) : undefined;
       fillWordCell(doc, cells[6], buildEvidenceNote(result, run, summary), imageRelId);
     }

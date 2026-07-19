@@ -18,6 +18,8 @@ exports.handler = async (event) => {
     });
   }
 
+  const since = event.queryStringParameters?.since || '';
+  const sinceTime = since ? Date.parse(since) - 15000 : 0;
   const runsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?per_page=20`, {
     headers: githubHeaders(token)
   });
@@ -30,15 +32,24 @@ exports.handler = async (event) => {
   }
 
   const runsPayload = await runsResponse.json();
-  const runs = await Promise.all((runsPayload.workflow_runs || []).map(async (run) => {
+  const runs = [];
+  let summariesRead = 0;
+
+  for (const run of (runsPayload.workflow_runs || [])) {
     const artifactsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`, {
       headers: githubHeaders(token)
     });
     const artifactsPayload = artifactsResponse.ok ? await artifactsResponse.json() : { artifacts: [] };
+    const shouldReadSummary = run.status === 'completed'
+      && summariesRead < 2
+      && (!sinceTime || Date.parse(run.created_at) >= sinceTime || summariesRead === 0);
+
     const artifacts = await Promise.all((artifactsPayload.artifacts || []).map(async (artifact) => {
-      const summary = await readArtifactSummary({ token, artifact }).catch((error) => ({
-        error: error instanceof Error ? error.message : 'Không đọc được summary.json trong artifact.'
-      }));
+      const summary = shouldReadSummary
+        ? await readArtifactSummary({ token, artifact }).catch((error) => ({
+          error: error instanceof Error ? error.message : 'Cannot read summary.json in artifact.'
+        }))
+        : null;
 
       return {
         id: artifact.id,
@@ -50,8 +61,9 @@ exports.handler = async (event) => {
     }));
 
     const summary = artifacts.find((artifact) => artifact.summary && !artifact.summary.error)?.summary ?? null;
+    if (summary) summariesRead += 1;
 
-    return {
+    runs.push({
       id: run.id,
       status: run.status,
       conclusion: run.conclusion,
@@ -61,8 +73,8 @@ exports.handler = async (event) => {
       updatedAt: run.updated_at,
       summary,
       artifacts
-    };
-  }));
+    });
+  }
 
   return json(200, { workflowUrl: `https://github.com/${owner}/${repo}/actions/workflows/${workflowFile}`, runs });
 };
@@ -107,8 +119,19 @@ function normalizeSummary(summary) {
       blocked: Number(counts.blocked) || 0,
       infrastructureError: Number(counts.infrastructureError) || 0
     },
-    results
+    results: results.map(stripLargeEvidenceBodies)
   };
+}
+
+function stripLargeEvidenceBodies(result) {
+  const clone = { ...result };
+  if (Array.isArray(clone.evidenceImages)) {
+    clone.evidenceImages = clone.evidenceImages.map((image) => ({
+      name: image.name || '',
+      contentType: image.contentType || ''
+    }));
+  }
+  return clone;
 }
 
 function readZipTextFile(zip, targetPath) {
