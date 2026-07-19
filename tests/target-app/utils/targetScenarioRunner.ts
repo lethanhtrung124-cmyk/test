@@ -48,9 +48,9 @@ export async function runTargetScenario(page: Page, scenario: TargetScenario, te
 }
 
 async function attachConclusionScreenshot(page: Page, testInfo: TestInfo, scenario: TargetScenario, outcome: 'pass' | 'fail' | 'error') {
-  const screenshot = await page.screenshot({ fullPage: true }).catch(() => null);
+  const screenshot = await page.screenshot({ type: 'jpeg', quality: 45, fullPage: false }).catch(() => null);
   if (!screenshot) return;
-  await testInfo.attach(`${scenario.id}-final-${outcome}.png`, { body: screenshot, contentType: 'image/png' });
+  await testInfo.attach(`${scenario.id}-final-${outcome}.jpg`, { body: screenshot, contentType: 'image/jpeg' });
 }
 
 async function attachActualResult(

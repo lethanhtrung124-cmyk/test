@@ -1,8 +1,8 @@
 const { inflateRawSync } = require('node:zlib');
 
 const workflowFile = process.env.GITHUB_AUTOMATION_WORKFLOW || 'automation.yml';
-const maxImageBodyLength = 700000;
-const maxSummaryImageBodyLength = 4500000;
+const maxImageBodyLength = 300000;
+const maxSummaryImageBodyLength = 1800000;
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') {
