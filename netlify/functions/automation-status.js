@@ -1,6 +1,8 @@
 const { inflateRawSync } = require('node:zlib');
 
 const workflowFile = process.env.GITHUB_AUTOMATION_WORKFLOW || 'automation.yml';
+const maxImageBodyLength = 700000;
+const maxSummaryImageBodyLength = 4500000;
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'GET') {
@@ -41,7 +43,7 @@ exports.handler = async (event) => {
     });
     const artifactsPayload = artifactsResponse.ok ? await artifactsResponse.json() : { artifacts: [] };
     const shouldReadSummary = run.status === 'completed'
-      && summariesRead < 2
+      && summariesRead < 1
       && (!sinceTime || Date.parse(run.created_at) >= sinceTime);
 
     const artifacts = await Promise.all((artifactsPayload.artifacts || []).map(async (artifact) => {
@@ -100,6 +102,7 @@ async function readArtifactSummary({ token, artifact }) {
 
 function normalizeSummary(summary) {
   const results = Array.isArray(summary.results) ? summary.results : [];
+  let remainingImageBodyLength = maxSummaryImageBodyLength;
   const counts = summary.counts || {
     total: results.length,
     pass: results.filter((result) => result.status === 'Pass').length,
@@ -119,17 +122,27 @@ function normalizeSummary(summary) {
       blocked: Number(counts.blocked) || 0,
       infrastructureError: Number(counts.infrastructureError) || 0
     },
-    results: results.map(stripLargeEvidenceBodies)
+    results: results.map((result) => stripLargeEvidenceBodies(result, (body) => {
+      if (!body || body.length > maxImageBodyLength || body.length > remainingImageBodyLength) return false;
+      remainingImageBodyLength -= body.length;
+      return true;
+    }))
   };
 }
 
-function stripLargeEvidenceBodies(result) {
+function stripLargeEvidenceBodies(result, shouldKeepImageBody) {
   const clone = { ...result };
   if (Array.isArray(clone.evidenceImages)) {
-    clone.evidenceImages = clone.evidenceImages.map((image) => ({
-      name: image.name || '',
-      contentType: image.contentType || ''
-    }));
+    clone.evidenceImages = clone.evidenceImages.map((image) => {
+      const body = image.body || '';
+      const keepBody = shouldKeepImageBody(body);
+      return {
+        name: image.name || '',
+        contentType: image.contentType || '',
+        body: keepBody ? body : '',
+        omittedReason: body && !keepBody ? 'IMAGE_TOO_LARGE_FOR_STATUS_RESPONSE' : ''
+      };
+    });
   }
   return clone;
 }

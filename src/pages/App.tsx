@@ -607,7 +607,7 @@ interface AutomationRunResult {
   errorMessage?: string;
   commitSha?: string;
   evidencePaths?: string[];
-  evidenceImages?: Array<{ name: string; contentType: string; body: string }>;
+  evidenceImages?: Array<{ name: string; contentType: string; body: string; omittedReason?: string }>;
 }
 
 interface AttachedScriptFile {
@@ -905,10 +905,15 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
     setResultFileMessage('Đang tạo file kịch bản đã cập nhật kết quả...');
     try {
+      const hydratedRun = latestAutomationRun && !summaryHasEmbeddedEvidence(latestSummary)
+        ? await loadAutomationRunWithEvidence(latestAutomationRun)
+        : undefined;
+      const summaryForFile = hydratedRun?.summary ?? latestSummary;
+      const runForFile = hydratedRun ?? latestAutomationRun;
       if (selectedRun) {
-        onSyncAutomationResults(buildAutomationResultRows(latestSummary, selectedRun.id, testCases));
+        onSyncAutomationResults(buildAutomationResultRows(summaryForFile, selectedRun.id, testCases));
       }
-      const resultFile = await createResultScriptFile(latestSummary, latestAutomationRun);
+      const resultFile = await createResultScriptFile(summaryForFile, runForFile);
       const url = URL.createObjectURL(resultFile.blob);
       const link = document.createElement('a');
       link.href = url;
@@ -925,6 +930,21 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     } catch (error) {
       setResultFileMessage(`Không tạo được file kết quả: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }
+  }
+
+  async function loadAutomationRunWithEvidence(run: AutomationRunStatus): Promise<AutomationRunStatus | undefined> {
+    const since = run.createdAt || automationRequestedAt;
+    const query = since ? `?since=${encodeURIComponent(since)}` : '';
+    const response = await fetch(`/.netlify/functions/automation-status${query}`);
+    const payload = await readJsonResponse(response) as { runs?: AutomationRunStatus[]; error?: string; detail?: string };
+    if (!response.ok) throw new Error(payload.detail || payload.error || response.statusText);
+    const runs = payload.runs ?? [];
+    const hydratedRun = runs.find((item) => item.id === run.id && item.summary) ?? runs.find((item) => item.summary);
+    if (hydratedRun?.summary) {
+      setAutomationRuns((current) => [hydratedRun, ...current.filter((item) => item.id !== hydratedRun.id)]);
+      setSelectedAutomationRunId(hydratedRun.id);
+    }
+    return hydratedRun;
   }
 
   async function saveResultScriptFromSummary(summary: AutomationRunSummary, run: AutomationRunStatus) {
@@ -1552,6 +1572,10 @@ function countAutomationResults(results: AutomationRunResult[] | undefined, stat
   return (results ?? []).filter((result) => result.status === status).length;
 }
 
+function summaryHasEmbeddedEvidence(summary: AutomationRunSummary | undefined): boolean {
+  return (summary?.results ?? []).some((result) => result.evidenceImages?.some((image) => image.body));
+}
+
 function findRunForRequest(runs: AutomationRunStatus[], requestedAt: string): AutomationRunStatus | undefined {
   if (!requestedAt) return runs.find((run) => run.status === 'completed' && run.summary) ?? runs[0];
   const requestedTime = new Date(requestedAt).getTime() - 15000;
@@ -1781,8 +1805,12 @@ function buildEvidenceNote(result: AutomationRunResult | undefined, run: Automat
   ];
 
   const evidencePaths = result.evidencePaths?.filter(Boolean) ?? [];
-  if (result.evidenceImages?.length) {
-    lines.push(`Hình ảnh chứng minh: đã nhúng ảnh ${result.evidenceImages[0].name || 'minh chứng'} vào ô này.`);
+  const embeddedImage = result.evidenceImages?.find((image) => image.body);
+  const omittedImage = result.evidenceImages?.find((image) => image.omittedReason);
+  if (embeddedImage && result.evidenceImages) {
+    lines.push(`Hình ảnh chứng minh: đã nhúng ảnh ${embeddedImage.name || 'minh chứng'} vào ô này.`);
+  } else if (omittedImage) {
+    lines.push(`Hình ảnh chứng minh: ${omittedImage.name || 'minh chứng'} quá lớn nên chưa nhúng trực tiếp vào file Word. Vui lòng mở artifact minh chứng để xem ảnh gốc.`);
   } else if (evidencePaths.length) {
     lines.push(`Hình ảnh chứng minh: ${evidencePaths.join('; ')}`);
   } else if (run?.artifacts?.length) {
