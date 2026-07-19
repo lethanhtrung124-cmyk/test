@@ -58,6 +58,7 @@ const results = specs.flatMap((spec) =>
         failureReason: status === 'Pass' ? '' : extractFailureReason(latest),
         errorMessage: status === 'Pass' ? '' : sanitizeErrorMessage(latest.error?.message ?? latest.error?.value ?? ''),
         evidencePaths: extractEvidencePaths(latest),
+        evidenceImages: extractEvidenceImages(latest),
         commitSha: process.env.GITHUB_SHA ?? 'local-pilot'
       };
     })
@@ -170,6 +171,17 @@ function extractEvidencePaths(result: PlaywrightResult): string[] {
     })
     .map((attachment) => attachment.path || attachment.name || '')
     .filter(Boolean);
+}
+
+function extractEvidenceImages(result: PlaywrightResult): Array<{ name: string; contentType: string; body: string }> {
+  return (result.attachments ?? [])
+    .filter((attachment) => attachment.body && /^image\//i.test(attachment.contentType ?? ''))
+    .slice(0, 1)
+    .map((attachment, index) => ({
+      name: attachment.name || `evidence-${index + 1}.png`,
+      contentType: attachment.contentType || 'image/png',
+      body: attachment.body || ''
+    }));
 }
 
 function normalizeVietnamese(value: string): string {

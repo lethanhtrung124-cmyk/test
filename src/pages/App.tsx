@@ -504,6 +504,7 @@ interface AutomationRunResult {
   errorMessage?: string;
   commitSha?: string;
   evidencePaths?: string[];
+  evidenceImages?: Array<{ name: string; contentType: string; body: string }>;
 }
 
 interface AttachedScriptFile {
@@ -1358,6 +1359,9 @@ async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRun
     if (code) results.set(code, result);
   }
 
+  const relsDoc = await readXmlFromZip(zip, 'word/_rels/document.xml.rels');
+  const contentTypesDoc = await readXmlFromZip(zip, '[Content_Types].xml');
+  let imageIndex = 1;
   const tables = Array.from(doc.getElementsByTagNameNS(wordNamespace, 'tbl'));
   for (const table of tables) {
     const rows = Array.from(table.getElementsByTagNameNS(wordNamespace, 'tr'));
@@ -1370,21 +1374,59 @@ async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRun
 
       const result = results.get(transactionCode);
       fillWordCell(doc, cells[5], result ? documentResultLabel(result.status) : 'Chưa có kết quả');
-      fillWordCell(doc, cells[6], buildEvidenceNote(result, run, summary));
+      const image = result?.evidenceImages?.[0];
+      const imageRelId = image ? addEvidenceImage(zip, relsDoc, contentTypesDoc, image, imageIndex++) : undefined;
+      fillWordCell(doc, cells[6], buildEvidenceNote(result, run, summary), imageRelId);
     }
   }
 
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+  zip.file('word/_rels/document.xml.rels', new XMLSerializer().serializeToString(relsDoc));
+  zip.file('[Content_Types].xml', new XMLSerializer().serializeToString(contentTypesDoc));
   return zip.generateAsync({ type: 'uint8array' });
 }
 
 const wordNamespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const relationshipsNamespace = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const relationshipNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const contentTypesNamespace = 'http://schemas.openxmlformats.org/package/2006/content-types';
 
 function cellText(cell: Element): string {
   return Array.from(cell.getElementsByTagNameNS(wordNamespace, 't')).map((node) => node.textContent ?? '').join('');
 }
 
-function fillWordCell(doc: XMLDocument, cell: Element, value: string) {
+async function readXmlFromZip(zip: JSZip, path: string): Promise<XMLDocument> {
+  const file = zip.file(path);
+  if (!file) throw new Error(`File Word thiếu ${path}.`);
+  const xml = await file.async('text');
+  return new DOMParser().parseFromString(xml, 'application/xml');
+}
+
+function addEvidenceImage(zip: JSZip, relsDoc: XMLDocument, contentTypesDoc: XMLDocument, image: { name: string; contentType: string; body: string }, index: number): string {
+  const extension = image.contentType.includes('jpeg') || image.contentType.includes('jpg') ? 'jpg' : 'png';
+  const mediaName = `evidence-${index}.${extension}`;
+  const relationshipId = `rIdEvidence${Date.now()}${index}`;
+  zip.file(`word/media/${mediaName}`, image.body, { base64: true });
+
+  const relationship = relsDoc.createElementNS(relationshipsNamespace, 'Relationship');
+  relationship.setAttribute('Id', relationshipId);
+  relationship.setAttribute('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image');
+  relationship.setAttribute('Target', `media/${mediaName}`);
+  relsDoc.documentElement.appendChild(relationship);
+  ensureContentType(contentTypesDoc, extension, image.contentType);
+  return relationshipId;
+}
+
+function ensureContentType(doc: XMLDocument, extension: string, contentType: string) {
+  const hasDefault = Array.from(doc.getElementsByTagNameNS(contentTypesNamespace, 'Default')).some((node) => node.getAttribute('Extension') === extension);
+  if (hasDefault) return;
+  const item = doc.createElementNS(contentTypesNamespace, 'Default');
+  item.setAttribute('Extension', extension);
+  item.setAttribute('ContentType', contentType);
+  doc.documentElement.appendChild(item);
+}
+
+function fillWordCell(doc: XMLDocument, cell: Element, value: string, imageRelationshipId?: string) {
   const tcPr = Array.from(cell.childNodes).find((node) => node.nodeType === Node.ELEMENT_NODE && (node as Element).localName === 'tcPr')?.cloneNode(true);
   while (cell.firstChild) cell.removeChild(cell.firstChild);
   if (tcPr) cell.appendChild(tcPr);
@@ -1400,6 +1442,37 @@ function fillWordCell(doc: XMLDocument, cell: Element, value: string) {
     paragraph.appendChild(run);
     cell.appendChild(paragraph);
   }
+
+  if (imageRelationshipId) {
+    const imageParagraph = createImageParagraph(doc, imageRelationshipId);
+    cell.appendChild(imageParagraph);
+  }
+}
+
+function createImageParagraph(doc: XMLDocument, relationshipId: string): Element {
+  const drawingXml = `
+    <w:p xmlns:w="${wordNamespace}" xmlns:r="${relationshipNamespace}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+      <w:r>
+        <w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="3200000" cy="1900000"/>
+            <wp:effectExtent l="0" t="0" r="0" b="0"/>
+            <wp:docPr id="${Math.floor(Math.random() * 100000) + 1}" name="Minh chứng kiểm thử"/>
+            <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr><pic:cNvPr id="0" name="Minh chứng kiểm thử"/><pic:cNvPicPr/></pic:nvPicPr>
+                  <pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+                  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3200000" cy="1900000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>`;
+  return doc.importNode(new DOMParser().parseFromString(drawingXml, 'application/xml').documentElement, true);
 }
 
 function normalizeTransactionCode(value?: string): string {
@@ -1425,7 +1498,9 @@ function buildEvidenceNote(result: AutomationRunResult | undefined, run: Automat
   ];
 
   const evidencePaths = result.evidencePaths?.filter(Boolean) ?? [];
-  if (evidencePaths.length) {
+  if (result.evidenceImages?.length) {
+    lines.push(`Hình ảnh chứng minh: đã nhúng ảnh ${result.evidenceImages[0].name || 'minh chứng'} vào ô này.`);
+  } else if (evidencePaths.length) {
     lines.push(`Hình ảnh chứng minh: ${evidencePaths.join('; ')}`);
   } else if (run?.artifacts?.length) {
     lines.push(`Hình ảnh chứng minh: ${run.artifacts.map((artifact) => artifact.name).join('; ')}`);
