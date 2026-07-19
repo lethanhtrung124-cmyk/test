@@ -775,7 +775,8 @@ td span {
   gap: 10px;
 }
 
-.artifact-actions a {
+.artifact-actions a,
+.artifact-actions button {
   border: 1px solid #b9d8d0;
   border-radius: 8px;
   padding: 10px 12px;
@@ -783,6 +784,19 @@ td span {
   background: #f2fbf7;
   font-weight: 800;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.artifact-actions button {
+  border-color: #117c6f;
+  background: #117c6f;
+  color: #ffffff;
+}
+
+.artifact-actions span {
+  align-self: center;
+  color: #5c6d69;
+  font-size: 13px;
 }
 
 .automation-results {

@@ -34,6 +34,7 @@ interface PlaywrightResult {
     name?: string;
     contentType?: string;
     body?: string;
+    path?: string;
   }>;
 }
 
@@ -56,6 +57,7 @@ const results = specs.flatMap((spec) =>
         retryCount: latest.retry,
         failureReason: status === 'Pass' ? '' : extractFailureReason(latest),
         errorMessage: status === 'Pass' ? '' : sanitizeErrorMessage(latest.error?.message ?? latest.error?.value ?? ''),
+        evidencePaths: extractEvidencePaths(latest),
         commitSha: process.env.GITHUB_SHA ?? 'local-pilot'
       };
     })
@@ -157,6 +159,17 @@ function sanitizeErrorMessage(message: string): string {
     .filter(Boolean)
     .slice(0, 4)
     .join(' ');
+}
+
+function extractEvidencePaths(result: PlaywrightResult): string[] {
+  return (result.attachments ?? [])
+    .filter((attachment) => {
+      const name = attachment.name ?? '';
+      const contentType = attachment.contentType ?? '';
+      return /screenshot|video|trace|image|png|webm|zip/i.test(`${name} ${contentType}`);
+    })
+    .map((attachment) => attachment.path || attachment.name || '')
+    .filter(Boolean);
 }
 
 function normalizeVietnamese(value: string): string {

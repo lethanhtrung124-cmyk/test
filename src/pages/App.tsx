@@ -11,6 +11,7 @@ import {
   PlayCircle,
   ShieldCheck
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useState } from 'react';
 import { Badge, type BadgeTone } from '../components/Badge';
 import { DataTable } from '../components/DataTable';
@@ -502,6 +503,15 @@ interface AutomationRunResult {
   failureReason?: string;
   errorMessage?: string;
   commitSha?: string;
+  evidencePaths?: string[];
+}
+
+interface AttachedScriptFile {
+  id: string;
+  name: string;
+  size: number;
+  importedAt: string;
+  buffer: ArrayBuffer;
 }
 
 function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
@@ -517,7 +527,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
   const [automationStatusMessage, setAutomationStatusMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ id: string; name: string; size: number; importedAt: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedScriptFile[]>([]);
+  const [resultFileMessage, setResultFileMessage] = useState('');
   const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
 
   useEffect(() => {
@@ -650,7 +661,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         return;
       }
 
-      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length}/${uniqueAutomatedCases.length} giao dịch qua ${payload.dispatchMode ?? 'GitHub Actions'}. Theo dõi tại ${payload.workflowUrl}. Minh chứng sẽ nằm trong artifact "${payload.evidenceLocation}".`);
+      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length}/${uniqueAutomatedCases.length} giao dịch. Khi runner chạy xong, bấm "Cập nhật kết quả" để tạo file kịch bản đã điền kết quả.`);
       setTimeout(() => {
         void refreshAutomationStatus();
       }, 3000);
@@ -660,13 +671,13 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   }
 
   async function refreshAutomationStatus() {
-    setAutomationStatusMessage('Đang cập nhật kết quả từ GitHub Actions...');
+    setAutomationStatusMessage('Đang cập nhật kết quả kiểm thử tự động...');
     try {
       const response = await fetch('/.netlify/functions/automation-status');
       const payload = await response.json() as { runs?: AutomationRunStatus[]; error?: string; detail?: string; requiredEnv?: string[] };
       if (!response.ok) {
         const requiredEnv = payload.requiredEnv?.length ? ` Cần cấu hình Netlify env: ${payload.requiredEnv.join(', ')}.` : '';
-        setAutomationStatusMessage(`Chưa đọc được kết quả automation: ${payload.error ?? response.statusText}. ${payload.detail ?? ''}${requiredEnv}`);
+        setAutomationStatusMessage(`Chưa đọc được kết quả kiểm thử tự động: ${payload.error ?? response.statusText}. ${payload.detail ?? ''}${requiredEnv}`);
         return;
       }
       setAutomationRuns(payload.runs ?? []);
@@ -686,8 +697,9 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
     }
 
     try {
+      const sourceBuffer = await file.arrayBuffer();
       const mammoth = await import('mammoth/mammoth.browser');
-      const extracted = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+      const extracted = await mammoth.extractRawText({ arrayBuffer: sourceBuffer.slice(0) });
       const importedCases = parseImportedTestCases(extracted.value);
       if (importedCases.length === 0) {
         setImportMessage('Không tìm thấy UC/giao dịch trong file Word. Hệ thống nhận dạng các mã như UC.016, [UC.016-1] hoặc TCs_001.');
@@ -708,12 +720,43 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       const importedScope = [...importedUseCaseIds];
       if (selectedRun) onUpdateRunScope(selectedRun.id, importedScope);
       setRunForm((current) => ({ ...current, useCaseIds: importedScope }));
-      setAttachedFiles((current) => [...current, { id: createId('file'), name: file.name, size: file.size, importedAt: new Date().toISOString() }]);
+      setAttachedFiles((current) => [...current, { id: createId('file'), name: file.name, size: file.size, importedAt: new Date().toISOString(), buffer: sourceBuffer }]);
       setImportMessage(`Đã import ${importedUseCaseIds.size} UC và ${importedCount} giao dịch kiểm thử từ file ${file.name}.`);
       event.target.value = '';
     } catch (error) {
       setImportMessage(`Không import được file Word: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
       event.target.value = '';
+    }
+  }
+
+  async function downloadResultScript() {
+    const scriptFile = attachedFiles[attachedFiles.length - 1];
+    if (!scriptFile) {
+      setResultFileMessage('Chưa có file kịch bản gốc để cập nhật kết quả.');
+      return;
+    }
+    if (!latestSummary) {
+      setResultFileMessage('Chưa có kết quả kiểm thử tự động để ghi vào file kịch bản.');
+      return;
+    }
+
+    setResultFileMessage('Đang tạo file kịch bản đã cập nhật kết quả...');
+    try {
+      const output = await buildResultDocx(scriptFile.buffer, latestSummary, latestAutomationRun);
+      const baseName = scriptFile.name.replace(/\.docx$/i, '');
+      const outputBuffer = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
+      const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${baseName}_KET_QUA_${latestSummary.testRunId || 'automation'}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setResultFileMessage('Đã tạo file kịch bản kết quả. Kiểm tra thư mục Downloads của trình duyệt.');
+    } catch (error) {
+      setResultFileMessage(`Không tạo được file kết quả: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }
   }
 
@@ -871,7 +914,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
           <div className="node-heading">
             <div>
               <p>Kết quả kiểm thử</p>
-              <h3>Tổng quan UC, giao dịch và file minh chứng</h3>
+              <h3>Tổng quan UC, giao dịch và file kịch bản kết quả</h3>
             </div>
             <button className="secondary-action" type="button" onClick={refreshAutomationStatus}>Cập nhật kết quả</button>
           </div>
@@ -901,14 +944,13 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
                 ))}
               </div>
               <div className="artifact-actions">
-                <a href={latestAutomationRun?.url} target="_blank" rel="noreferrer">Mở workflow</a>
-                {(latestAutomationRun?.artifacts ?? []).map((artifact) => (
-                  <a key={artifact.id} href={artifact.url} target="_blank" rel="noreferrer">Tải file kết quả: {artifact.name}</a>
-                ))}
+                <button type="button" onClick={downloadResultScript}>Tải file kịch bản đã cập nhật</button>
+                <span>File tải về sẽ điền cột Kết quả kiểm tra và Chú thích trong kịch bản Word đã đính kèm.</span>
               </div>
+              {resultFileMessage && <p className="form-note">{resultFileMessage}</p>}
             </div>
           ) : (
-            <p className="plain-text">Chưa có kết quả. Bấm “Chạy kiểm thử” hoặc “Cập nhật kết quả” để lấy artifact mới nhất từ GitHub Actions.</p>
+            <p className="plain-text">Chưa có kết quả. Bấm “Chạy kiểm thử”, sau đó bấm “Cập nhật kết quả” để tạo file kịch bản đã điền kết quả.</p>
           )}
         </div>
       </section>
@@ -1297,6 +1339,100 @@ function automationResultTone(status: ResultStatus): BadgeTone {
 
 function countAutomationResults(results: AutomationRunResult[] | undefined, status: ResultStatus): number {
   return (results ?? []).filter((result) => result.status === status).length;
+}
+
+async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRunSummary, run?: AutomationRunStatus): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(sourceBuffer);
+  const documentFile = zip.file('word/document.xml');
+  if (!documentFile) throw new Error('File Word không có word/document.xml hợp lệ.');
+
+  const documentXml = await documentFile.async('text');
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(documentXml, 'application/xml');
+  const parseError = doc.getElementsByTagName('parsererror')[0];
+  if (parseError) throw new Error('Không đọc được cấu trúc XML của file Word.');
+
+  const results = new Map<string, AutomationRunResult>();
+  for (const result of summary.results ?? []) {
+    const code = normalizeTransactionCode(result.testCaseCode);
+    if (code) results.set(code, result);
+  }
+
+  const tables = Array.from(doc.getElementsByTagNameNS(wordNamespace, 'tbl'));
+  for (const table of tables) {
+    const rows = Array.from(table.getElementsByTagNameNS(wordNamespace, 'tr'));
+    for (const row of rows.slice(1)) {
+      const cells = Array.from(row.getElementsByTagNameNS(wordNamespace, 'tc'));
+      if (cells.length < 7) continue;
+
+      const transactionCode = normalizeTransactionCode(cellText(cells[0]));
+      if (!transactionCode) continue;
+
+      const result = results.get(transactionCode);
+      fillWordCell(doc, cells[5], result ? documentResultLabel(result.status) : 'Chưa có kết quả');
+      fillWordCell(doc, cells[6], buildEvidenceNote(result, run, summary));
+    }
+  }
+
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+  return zip.generateAsync({ type: 'uint8array' });
+}
+
+const wordNamespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function cellText(cell: Element): string {
+  return Array.from(cell.getElementsByTagNameNS(wordNamespace, 't')).map((node) => node.textContent ?? '').join('');
+}
+
+function fillWordCell(doc: XMLDocument, cell: Element, value: string) {
+  const tcPr = Array.from(cell.childNodes).find((node) => node.nodeType === Node.ELEMENT_NODE && (node as Element).localName === 'tcPr')?.cloneNode(true);
+  while (cell.firstChild) cell.removeChild(cell.firstChild);
+  if (tcPr) cell.appendChild(tcPr);
+
+  const lines = value.split('\n').filter(Boolean);
+  for (const line of lines.length ? lines : ['']) {
+    const paragraph = doc.createElementNS(wordNamespace, 'w:p');
+    const run = doc.createElementNS(wordNamespace, 'w:r');
+    const text = doc.createElementNS(wordNamespace, 'w:t');
+    text.setAttribute('xml:space', 'preserve');
+    text.textContent = line;
+    run.appendChild(text);
+    paragraph.appendChild(run);
+    cell.appendChild(paragraph);
+  }
+}
+
+function normalizeTransactionCode(value?: string): string {
+  const match = (value ?? '').match(/UC\.\s*\d+\s*-\s*\d+/i);
+  return match ? match[0].replace(/\s+/g, '').toUpperCase() : '';
+}
+
+function documentResultLabel(status: ResultStatus): string {
+  if (status === 'Pass') return 'Đạt';
+  if (status === 'Fail') return 'Không đạt';
+  if (status === 'Blocked') return 'Bị chặn';
+  if (status === 'Infrastructure Error') return 'Lỗi hạ tầng';
+  return resultStatusLabel(status);
+}
+
+function buildEvidenceNote(result: AutomationRunResult | undefined, run: AutomationRunStatus | undefined, summary: AutomationRunSummary): string {
+  if (!result) return 'Chưa có kết quả kiểm thử tự động tương ứng trong lần chạy mới nhất.';
+
+  const lines = [
+    result.status === 'Pass' ? 'Kết quả thực tế phù hợp với kết quả mong đợi.' : `Nguyên nhân: ${result.failureReason || result.errorMessage || 'Kết quả thực tế không đáp ứng kết quả mong đợi.'}`,
+    `Thời điểm chạy: ${summary.generatedAt ? new Date(summary.generatedAt).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN')}`,
+    `Thời gian xử lý: ${result.durationMs} ms`
+  ];
+
+  const evidencePaths = result.evidencePaths?.filter(Boolean) ?? [];
+  if (evidencePaths.length) {
+    lines.push(`Hình ảnh chứng minh: ${evidencePaths.join('; ')}`);
+  } else if (run?.artifacts?.length) {
+    lines.push(`Hình ảnh chứng minh: ${run.artifacts.map((artifact) => artifact.name).join('; ')}`);
+  }
+
+  if (run?.url) lines.push(`Workflow minh chứng: ${run.url}`);
+  return lines.join('\n');
 }
 
 function formatBytes(value: number): string {
