@@ -632,6 +632,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [importMessage, setImportMessage] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<AttachedScriptFile[]>([]);
   const [resultFileMessage, setResultFileMessage] = useState('');
+  const [savedResultFileKeys, setSavedResultFileKeys] = useState<string[]>([]);
   const scopedRunIds = getRunUseCaseIds(selectedRun, useCases);
 
   useEffect(() => {
@@ -799,25 +800,35 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       setAutomationRuns(runs);
       const activeRequestedAt = options.requestedAt ?? automationRequestedAt;
       const matchingRun = findRunForRequest(runs, activeRequestedAt);
+      const completedRunWithSummary = matchingRun?.summary ? matchingRun : runs.find((run) => run.status === 'completed' && run.summary);
 
       if (automationPolling || activeRequestedAt) {
-        if (!matchingRun) {
+        if (!matchingRun && !completedRunWithSummary) {
           setAutomationStatusMessage('Đang chạy kiểm thử tự động: chờ runner khởi tạo lần chạy mới...');
           return;
         }
-        if (matchingRun.status !== 'completed') {
+        const targetRun = completedRunWithSummary ?? matchingRun;
+        if (!targetRun || targetRun.status !== 'completed') {
           setAutomationStatusMessage('Đang chạy kiểm thử tự động: runner đang thực hiện kịch bản...');
           return;
         }
 
-        setAutomationPolling(false);
-        if (matchingRun.conclusion === 'success' || matchingRun.summary) {
-          if (matchingRun.summary && selectedRun) {
-            onSyncAutomationResults(buildAutomationResultRows(matchingRun.summary, selectedRun.id, testCases));
+        if (!targetRun.summary) {
+          const completedAt = new Date(targetRun.updatedAt).getTime();
+          const artifactWaitExpired = Number.isFinite(completedAt) && Date.now() - completedAt > 120000;
+          if (!artifactWaitExpired) {
+            setAutomationStatusMessage('GitHub đã hoàn thành, đang chờ artifact kết quả sẵn sàng...');
+            return;
           }
+        }
+
+        setAutomationPolling(false);
+        if (targetRun.summary) {
+          if (selectedRun) onSyncAutomationResults(buildAutomationResultRows(targetRun.summary, selectedRun.id, testCases));
+          await saveResultScriptFromSummary(targetRun.summary, targetRun);
           setAutomationStatusMessage('Hoàn thành kiểm thử. Bạn có thể tải file kịch bản đã cập nhật kết quả.');
         } else {
-          const reason = matchingRun.conclusion ? automationConclusionReason(matchingRun.conclusion) : 'Không có summary kết quả trong lần chạy.';
+          const reason = targetRun.conclusion ? automationConclusionReason(targetRun.conclusion) : 'Không có summary kết quả trong lần chạy.';
           setAutomationStatusMessage(`Quy trình kiểm thử bị lỗi: ${reason}`);
         }
         return;
@@ -888,34 +899,62 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       if (selectedRun) {
         onSyncAutomationResults(buildAutomationResultRows(latestSummary, selectedRun.id, testCases));
       }
-      const output = await buildResultDocx(scriptFile.buffer, latestSummary, latestAutomationRun);
-      const baseName = scriptFile.name.replace(/\.docx$/i, '');
-      const outputBuffer = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
-      const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const url = URL.createObjectURL(blob);
-      const fileName = `${baseName}_KET_QUA_${latestSummary.testRunId || 'automation'}.docx`;
+      const resultFile = await createResultScriptFile(latestSummary, latestAutomationRun);
+      const url = URL.createObjectURL(resultFile.blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName;
+      link.download = resultFile.fileName;
       document.body.appendChild(link);
       link.click();
       link.remove();
       if (selectedProject && selectedRun) {
-        onSaveResultFile({
-          id: `result-file-${selectedRun.id}-${latestSummary.checksum || Date.now()}`,
-          projectId: selectedProject.id,
-          runId: selectedRun.id,
-          fileName,
-          createdAt: new Date().toISOString(),
-          sizeInBytes: output.byteLength,
-          dataUrl: await blobToDataUrl(blob)
-        });
+        onSaveResultFile(resultFile.attachment);
+        setSavedResultFileKeys((current) => [...new Set([...current, resultFile.attachment.id])]);
       }
       URL.revokeObjectURL(url);
       setResultFileMessage('Đã tạo file kịch bản kết quả. Kiểm tra thư mục Downloads của trình duyệt.');
     } catch (error) {
       setResultFileMessage(`Không tạo được file kết quả: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }
+  }
+
+  async function saveResultScriptFromSummary(summary: AutomationRunSummary, run: AutomationRunStatus) {
+    if (!selectedProject || !selectedRun || !attachedFiles.length) {
+      setResultFileMessage('Đã có kết quả kiểm thử nhưng chưa có file kịch bản Word để tạo file kết quả.');
+      return;
+    }
+    const fileKey = resultFileKey(selectedRun.id, summary, run);
+    if (savedResultFileKeys.includes(fileKey)) return;
+    try {
+      const resultFile = await createResultScriptFile(summary, run);
+      onSaveResultFile(resultFile.attachment);
+      setSavedResultFileKeys((current) => [...new Set([...current, resultFile.attachment.id])]);
+      setResultFileMessage('Đã tự tạo file Word kết quả và lưu vào tab Kết quả kiểm thử.');
+    } catch (error) {
+      setResultFileMessage(`Đã có kết quả nhưng chưa tạo được file Word: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
+    }
+  }
+
+  async function createResultScriptFile(summary: AutomationRunSummary, run?: AutomationRunStatus) {
+    const scriptFile = attachedFiles[attachedFiles.length - 1];
+    if (!scriptFile) throw new Error('Chưa có file kịch bản gốc để cập nhật kết quả.');
+    if (!selectedProject || !selectedRun) throw new Error('Chưa có dự án hoặc đợt kiểm thử đang chọn.');
+
+    const output = await buildResultDocx(scriptFile.buffer, summary, run);
+    const baseName = scriptFile.name.replace(/\.docx$/i, '');
+    const outputBuffer = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
+    const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const fileName = `${baseName}_KET_QUA_${summary.testRunId || 'automation'}.docx`;
+    const attachment = {
+      id: resultFileKey(selectedRun.id, summary, run),
+      projectId: selectedProject.id,
+      runId: selectedRun.id,
+      fileName,
+      createdAt: new Date().toISOString(),
+      sizeInBytes: output.byteLength,
+      dataUrl: await blobToDataUrl(blob)
+    };
+    return { blob, fileName, attachment };
   }
 
   const currentRunUseCaseIds = getRunUseCaseIds(selectedRun, useCases);
@@ -1483,9 +1522,18 @@ function countAutomationResults(results: AutomationRunResult[] | undefined, stat
 }
 
 function findRunForRequest(runs: AutomationRunStatus[], requestedAt: string): AutomationRunStatus | undefined {
-  if (!requestedAt) return runs[0];
+  if (!requestedAt) return runs.find((run) => run.status === 'completed' && run.summary) ?? runs[0];
   const requestedTime = new Date(requestedAt).getTime() - 15000;
-  return runs.find((run) => new Date(run.createdAt).getTime() >= requestedTime) ?? runs.find((run) => run.status !== 'completed');
+  const afterRequest = runs.filter((run) => new Date(run.createdAt).getTime() >= requestedTime);
+  return afterRequest.find((run) => run.status === 'completed' && run.summary)
+    ?? afterRequest.find((run) => run.status !== 'completed')
+    ?? afterRequest[0]
+    ?? runs.find((run) => run.status === 'completed' && run.summary)
+    ?? runs[0];
+}
+
+function resultFileKey(runId: string, summary: AutomationRunSummary, run?: AutomationRunStatus): string {
+  return `result-file-${runId}-${summary.checksum || summary.generatedAt || run?.id || Date.now()}`;
 }
 
 function automationConclusionReason(conclusion: string): string {

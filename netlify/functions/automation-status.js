@@ -18,7 +18,7 @@ exports.handler = async (event) => {
     });
   }
 
-  const runsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?event=repository_dispatch&per_page=5`, {
+  const runsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?per_page=20`, {
     headers: githubHeaders(token)
   });
 
