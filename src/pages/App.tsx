@@ -48,9 +48,7 @@ interface ResultAttachment {
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Dự án & phạm vi' },
-  { id: 'rtm', label: 'Ma trận truy vết' },
   { id: 'runs', label: 'Kết quả kiểm thử' },
-  { id: 'defects', label: 'Lỗi' },
   { id: 'evidence', label: 'Minh chứng & nhật ký' },
   { id: 'entry', label: 'Nhập liệu kiểm thử' }
 ];
