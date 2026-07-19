@@ -63,7 +63,10 @@ export function App() {
   const [testCaseRows, setTestCaseRows] = useStoredState('uc-platform-test-cases', initialTestCases);
   const [testRunRows, setTestRunRows] = useStoredState('uc-platform-test-runs', normalizeRuns(initialTestRuns, initialUseCases));
   const [resultRows, setResultRows] = useStoredState('uc-platform-test-results', initialTestResults);
-  const [resultFiles, setResultFiles] = useStoredState<ResultAttachment[]>('uc-platform-result-files', []);
+  const [resultFiles, setResultFiles] = useState<ResultAttachment[]>(() => {
+    window.localStorage.removeItem('uc-platform-result-files');
+    return [];
+  });
   const [defectRows, setDefectRows] = useStoredState('uc-platform-defects', initialDefects);
   const [auditRows, setAuditRows] = useStoredState('uc-platform-audit-logs', initialAuditLogs);
   const [selectedProjectId, setSelectedProjectId] = useStoredState('uc-platform-selected-project', projectRows[0]?.id ?? '');
@@ -1357,12 +1360,21 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
 function useStoredState<T>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
   const [value, setValue] = useState<T>(() => {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : initialValue;
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : initialValue;
+    } catch {
+      window.localStorage.removeItem(key);
+      return initialValue;
+    }
   });
 
   useEffect(() => {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn(`Không lưu được dữ liệu cục bộ cho ${key}`, error);
+    }
   }, [key, value]);
 
   return [value, setValue];
