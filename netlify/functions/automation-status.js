@@ -42,7 +42,7 @@ exports.handler = async (event) => {
     const artifactsPayload = artifactsResponse.ok ? await artifactsResponse.json() : { artifacts: [] };
     const shouldReadSummary = run.status === 'completed'
       && summariesRead < 2
-      && (!sinceTime || Date.parse(run.created_at) >= sinceTime || summariesRead === 0);
+      && (!sinceTime || Date.parse(run.created_at) >= sinceTime);
 
     const artifacts = await Promise.all((artifactsPayload.artifacts || []).map(async (artifact) => {
       const summary = shouldReadSummary

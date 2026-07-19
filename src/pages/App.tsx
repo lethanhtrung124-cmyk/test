@@ -629,6 +629,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [automationForm, setAutomationForm] = useState({ baseUrl: '', accountRole: 'KTV', browser: 'chromium', suiteTag: '@suite:scenario', retryPolicy: '1', maxCases: '10', note: '' });
   const [automationMessage, setAutomationMessage] = useState('');
   const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
+  const [selectedAutomationRunId, setSelectedAutomationRunId] = useState<number | null>(null);
   const [automationStatusMessage, setAutomationStatusMessage] = useState('');
   const [automationPolling, setAutomationPolling] = useState(false);
   const [automationRequestedAt, setAutomationRequestedAt] = useState('');
@@ -778,6 +779,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
       const requestedAt = new Date().toISOString();
       setAutomationRequestedAt(requestedAt);
+      setSelectedAutomationRunId(null);
       setAutomationPolling(true);
       setAutomationStatusMessage(`Đang chạy kiểm thử tự động cho ${automatedCases.length}/${uniqueAutomatedCases.length} giao dịch...`);
       setAutomationMessage('Đã gửi yêu cầu chạy thật. Hệ thống đang chạy kiểm thử tự động, vui lòng chờ kết quả.');
@@ -828,6 +830,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
         setAutomationPolling(false);
         if (targetRun.summary) {
+          setSelectedAutomationRunId(targetRun.id);
           if (selectedRun) onSyncAutomationResults(buildAutomationResultRows(targetRun.summary, selectedRun.id, testCases));
           await saveResultScriptFromSummary(targetRun.summary, targetRun);
           setAutomationStatusMessage('Hoàn thành kiểm thử. Bạn có thể tải file kịch bản đã cập nhật kết quả.');
@@ -838,6 +841,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         return;
       }
 
+      const displayRun = findRunForRequest(runs, activeRequestedAt);
+      setSelectedAutomationRunId(displayRun?.summary ? displayRun.id : null);
       setAutomationStatusMessage(runs.length ? 'Đã có kết quả kiểm thử tự động mới nhất.' : 'Chưa có lần chạy kiểm thử tự động nào.');
     } catch (error) {
       if (automationPolling) setAutomationPolling(false);
@@ -964,7 +969,16 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const currentRunUseCaseIds = getRunUseCaseIds(selectedRun, useCases);
   const currentRunCases = uniqueByCode(testCases.filter((testCase) => testCase.useCaseIds.some((useCaseId) => currentRunUseCaseIds.includes(useCaseId))));
   const currentRunUseCaseCount = new Set(currentRunCases.flatMap((testCase) => testCase.useCaseIds)).size;
-  const latestAutomationRun = automationRuns[0];
+  const latestAutomationRun = useMemo(
+    () => {
+      const selectedDisplayRun = automationRuns.find((run) => run.id === selectedAutomationRunId)
+        ?? findRunForRequest(automationRuns, automationRequestedAt);
+      if (selectedDisplayRun) return selectedDisplayRun;
+      if (automationPolling && automationRequestedAt) return undefined;
+      return automationRuns.find((run) => run.summary) ?? automationRuns[0];
+    },
+    [automationPolling, automationRuns, automationRequestedAt, selectedAutomationRunId]
+  );
   const latestSummary = latestAutomationRun?.summary;
   const latestUcStats = summarizeAutomationUseCases(latestSummary?.results ?? []);
   const selectedRunId = selectedRun?.id;
@@ -1134,7 +1148,11 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               {resultFileMessage && <p className="form-note">{resultFileMessage}</p>}
             </div>
           ) : (
-            <p className="plain-text">Chưa có kết quả. Bấm “Chạy kiểm thử”, sau đó bấm “Cập nhật kết quả” để tạo file kịch bản đã điền kết quả.</p>
+            <p className="plain-text">
+              {automationPolling
+                ? 'Đang chạy kiểm thử tự động. Hệ thống sẽ tự hiển thị kết quả và file Word sau khi GitHub hoàn thành và artifact sẵn sàng.'
+                : 'Chưa có kết quả cho đợt kiểm thử này. Bấm “Chạy kiểm thử” để bắt đầu.'}
+            </p>
           )}
         </div>
       </section>
@@ -1540,9 +1558,7 @@ function findRunForRequest(runs: AutomationRunStatus[], requestedAt: string): Au
   const afterRequest = runs.filter((run) => new Date(run.createdAt).getTime() >= requestedTime);
   return afterRequest.find((run) => run.status === 'completed' && run.summary)
     ?? afterRequest.find((run) => run.status !== 'completed')
-    ?? afterRequest[0]
-    ?? runs.find((run) => run.status === 'completed' && run.summary)
-    ?? runs[0];
+    ?? afterRequest[0];
 }
 
 function resultFileKey(runId: string, summary: AutomationRunSummary, run?: AutomationRunStatus): string {
