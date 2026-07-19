@@ -29,6 +29,7 @@ export async function runTargetScenario(page: Page, scenario: TargetScenario, te
     const matched = evaluateExpectedResult(actualResult, scenario.expectedResult, scenario.precondition);
     const failureReason = matched ? '' : explainBusinessMismatch(actualResult, scenario);
     await attachActualResult(testInfo, scenario, matched, evidenceNotes, actualResult, failureReason);
+    await attachConclusionScreenshot(page, testInfo, scenario, matched ? 'pass' : 'fail');
     actualResultAttached = true;
 
     expect(
@@ -40,9 +41,16 @@ export async function runTargetScenario(page: Page, scenario: TargetScenario, te
       const actualResult = await readVisibleText(page);
       const failureReason = explainExecutionFailure(error, actualResult);
       await attachActualResult(testInfo, scenario, false, evidenceNotes, actualResult, failureReason);
+      await attachConclusionScreenshot(page, testInfo, scenario, 'error');
     }
     throw error;
   }
+}
+
+async function attachConclusionScreenshot(page: Page, testInfo: TestInfo, scenario: TargetScenario, outcome: 'pass' | 'fail' | 'error') {
+  const screenshot = await page.screenshot({ fullPage: true }).catch(() => null);
+  if (!screenshot) return;
+  await testInfo.attach(`${scenario.id}-final-${outcome}.png`, { body: screenshot, contentType: 'image/png' });
 }
 
 async function attachActualResult(

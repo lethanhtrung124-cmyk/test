@@ -174,9 +174,12 @@ function extractEvidencePaths(result: PlaywrightResult): string[] {
 }
 
 function extractEvidenceImages(result: PlaywrightResult): Array<{ name: string; contentType: string; body: string }> {
-  return (result.attachments ?? [])
+  const imageAttachments = (result.attachments ?? [])
     .filter((attachment) => attachment.body && /^image\//i.test(attachment.contentType ?? ''))
-    .slice(0, 1)
+  const conclusionImage = [...imageAttachments].reverse().find((attachment) => /final-(pass|fail|error)|ket-qua|kết-quả|actual|result/i.test(attachment.name ?? ''));
+  const selected = conclusionImage ? [conclusionImage] : imageAttachments.slice(-1);
+
+  return selected
     .map((attachment, index) => ({
       name: attachment.name || `evidence-${index + 1}.png`,
       contentType: attachment.contentType || 'image/png',

@@ -527,6 +527,8 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
   const [automationMessage, setAutomationMessage] = useState('');
   const [automationRuns, setAutomationRuns] = useState<AutomationRunStatus[]>([]);
   const [automationStatusMessage, setAutomationStatusMessage] = useState('');
+  const [automationPolling, setAutomationPolling] = useState(false);
+  const [automationRequestedAt, setAutomationRequestedAt] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<AttachedScriptFile[]>([]);
   const [resultFileMessage, setResultFileMessage] = useState('');
@@ -537,6 +539,14 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       void refreshAutomationStatus();
     }
   }, [entryMode]);
+
+  useEffect(() => {
+    if (!automationPolling) return;
+    const timer = window.setInterval(() => {
+      void refreshAutomationStatus({ silent: true });
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [automationPolling, automationRequestedAt]);
 
   function submitProject(event: FormEvent) {
     event.preventDefault();
@@ -632,7 +642,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
       return;
     }
 
-    setAutomationMessage('Đang gửi yêu cầu chạy Playwright lên GitHub Actions...');
+    setAutomationMessage('Đang gửi yêu cầu chạy kiểm thử tự động...');
     try {
       const response = await fetch('/.netlify/functions/run-automation', {
         method: 'POST',
@@ -662,17 +672,21 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         return;
       }
 
-      setAutomationMessage(`Đã gửi yêu cầu chạy thật cho ${automatedCases.length}/${uniqueAutomatedCases.length} giao dịch. Khi runner chạy xong, bấm "Cập nhật kết quả" để tạo file kịch bản đã điền kết quả.`);
+      const requestedAt = new Date().toISOString();
+      setAutomationRequestedAt(requestedAt);
+      setAutomationPolling(true);
+      setAutomationStatusMessage(`Đang chạy kiểm thử tự động cho ${automatedCases.length}/${uniqueAutomatedCases.length} giao dịch...`);
+      setAutomationMessage('Đã gửi yêu cầu chạy thật. Hệ thống đang chạy kiểm thử tự động, vui lòng chờ kết quả.');
       setTimeout(() => {
-        void refreshAutomationStatus();
+        void refreshAutomationStatus({ silent: true, requestedAt });
       }, 3000);
     } catch (error) {
       setAutomationMessage(`Không gọi được automation runner: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }
   }
 
-  async function refreshAutomationStatus() {
-    setAutomationStatusMessage('Đang cập nhật kết quả kiểm thử tự động...');
+  async function refreshAutomationStatus(options: { silent?: boolean; requestedAt?: string } = {}) {
+    if (!options.silent) setAutomationStatusMessage('Đang cập nhật kết quả kiểm thử tự động...');
     try {
       const response = await fetch('/.netlify/functions/automation-status');
       const payload = await response.json() as { runs?: AutomationRunStatus[]; error?: string; detail?: string; requiredEnv?: string[] };
@@ -681,9 +695,34 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
         setAutomationStatusMessage(`Chưa đọc được kết quả kiểm thử tự động: ${payload.error ?? response.statusText}. ${payload.detail ?? ''}${requiredEnv}`);
         return;
       }
-      setAutomationRuns(payload.runs ?? []);
-      setAutomationStatusMessage((payload.runs ?? []).length ? 'Đã cập nhật kết quả automation mới nhất.' : 'Chưa có lần chạy automation nào.');
+      const runs = payload.runs ?? [];
+      setAutomationRuns(runs);
+      const activeRequestedAt = options.requestedAt ?? automationRequestedAt;
+      const matchingRun = findRunForRequest(runs, activeRequestedAt);
+
+      if (automationPolling || activeRequestedAt) {
+        if (!matchingRun) {
+          setAutomationStatusMessage('Đang chạy kiểm thử tự động: chờ runner khởi tạo lần chạy mới...');
+          return;
+        }
+        if (matchingRun.status !== 'completed') {
+          setAutomationStatusMessage('Đang chạy kiểm thử tự động: runner đang thực hiện kịch bản...');
+          return;
+        }
+
+        setAutomationPolling(false);
+        if (matchingRun.conclusion === 'success' || matchingRun.summary) {
+          setAutomationStatusMessage('Hoàn thành kiểm thử. Bạn có thể tải file kịch bản đã cập nhật kết quả.');
+        } else {
+          const reason = matchingRun.conclusion ? automationConclusionReason(matchingRun.conclusion) : 'Không có summary kết quả trong lần chạy.';
+          setAutomationStatusMessage(`Quy trình kiểm thử bị lỗi: ${reason}`);
+        }
+        return;
+      }
+
+      setAutomationStatusMessage(runs.length ? 'Đã có kết quả kiểm thử tự động mới nhất.' : 'Chưa có lần chạy kiểm thử tự động nào.');
     } catch (error) {
+      if (automationPolling) setAutomationPolling(false);
       setAutomationStatusMessage(`Không gọi được trạng thái automation: ${error instanceof Error ? error.message : 'lỗi không xác định'}`);
     }
   }
@@ -827,24 +866,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
             <label>Mã đợt kiểm thử<input value={runForm.code} onChange={(event) => setRunForm({ ...runForm, code: event.target.value })} required /></label>
             <button type="submit">Tạo đợt kiểm thử</button>
           </form>
-          <div className="scope-panel">
-            <div>
-              <strong>Cập nhật phạm vi UC</strong>
-              <span>{currentRunUseCaseIds.length} UC đang thuộc đợt kiểm thử hiện tại</span>
-            </div>
-            {selectedRunId ? (
-              <div className="scope-list">
-                {useCases.map((useCase) => (
-                  <label key={useCase.id}>
-                    <input type="checkbox" checked={currentRunUseCaseIds.includes(useCase.id)} onChange={(event) => onUpdateRunScope(selectedRunId, toggleValue(currentRunUseCaseIds, useCase.id, event.target.checked))} />
-                    <span>{useCase.code} - {useCase.title}</span>
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <p className="plain-text">Tạo đợt kiểm thử trước khi cập nhật phạm vi UC.</p>
-            )}
-          </div>
+          <p className="plain-text">Phạm vi UC của đợt kiểm thử được tự động lấy từ file kịch bản Word ở bước 3.</p>
         </div>
       </section>
 
@@ -903,7 +925,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               <label>Trình duyệt<select value={automationForm.browser} onChange={(event) => setAutomationForm({ ...automationForm, browser: event.target.value })}><option value="chromium">Chromium</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
               <label>Số giao dịch tối đa<input type="number" min="1" max="50" value={automationForm.maxCases} onChange={(event) => setAutomationForm({ ...automationForm, maxCases: event.target.value })} /></label>
             </div>
-            <button type="submit">Chạy kiểm thử</button>
+            <button type="submit" disabled={automationPolling}>{automationPolling ? 'Đang chạy kiểm thử...' : 'Chạy kiểm thử'}</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}
           </form>
         </div>
@@ -917,7 +939,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
               <p>Kết quả kiểm thử</p>
               <h3>Tổng quan UC, giao dịch và file kịch bản kết quả</h3>
             </div>
-            <button className="secondary-action" type="button" onClick={refreshAutomationStatus}>Cập nhật kết quả</button>
+            <Badge tone={automationPolling ? 'warning' : latestSummary ? 'success' : 'neutral'}>{automationPolling ? 'Đang chạy' : latestSummary ? 'Hoàn thành' : 'Chưa có kết quả'}</Badge>
           </div>
           {automationStatusMessage && <p className="form-note">{automationStatusMessage}</p>}
           {latestSummary ? (
@@ -1109,7 +1131,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
             <label>Ghi chú dữ liệu kiểm thử<textarea value={automationForm.note} onChange={(event) => setAutomationForm({ ...automationForm, note: event.target.value })} placeholder="Ví dụ: dùng dữ liệu test, không dùng dữ liệu thật" /></label>
             <button type="submit">Gửi yêu cầu chạy Playwright thật</button>
             {automationMessage && <p className="form-note">{automationMessage}</p>}
-            <button className="secondary-action" type="button" onClick={refreshAutomationStatus}>Cập nhật kết quả mới nhất</button>
+            <button className="secondary-action" type="button" onClick={() => refreshAutomationStatus()}>Cập nhật kết quả mới nhất</button>
             {automationStatusMessage && <p className="form-note">{automationStatusMessage}</p>}
           </form>
 
@@ -1340,6 +1362,23 @@ function automationResultTone(status: ResultStatus): BadgeTone {
 
 function countAutomationResults(results: AutomationRunResult[] | undefined, status: ResultStatus): number {
   return (results ?? []).filter((result) => result.status === status).length;
+}
+
+function findRunForRequest(runs: AutomationRunStatus[], requestedAt: string): AutomationRunStatus | undefined {
+  if (!requestedAt) return runs[0];
+  const requestedTime = new Date(requestedAt).getTime() - 15000;
+  return runs.find((run) => new Date(run.createdAt).getTime() >= requestedTime) ?? runs.find((run) => run.status !== 'completed');
+}
+
+function automationConclusionReason(conclusion: string): string {
+  const reasons: Record<string, string> = {
+    failure: 'Có giao dịch không đạt hoặc runner gặp lỗi trong quá trình thực hiện. Xem nguyên nhân chi tiết ở danh sách kết quả và file kịch bản tải về.',
+    cancelled: 'Lần chạy đã bị hủy trước khi hoàn tất.',
+    timed_out: 'Lần chạy vượt quá thời gian cho phép.',
+    action_required: 'GitHub Actions cần thao tác xác nhận hoặc cấu hình bổ sung.',
+    startup_failure: 'Runner không khởi tạo được môi trường kiểm thử.'
+  };
+  return reasons[conclusion] ?? `GitHub Actions trả về trạng thái ${conclusion}.`;
 }
 
 async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRunSummary, run?: AutomationRunStatus): Promise<Uint8Array> {
