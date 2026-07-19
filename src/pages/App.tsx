@@ -1160,7 +1160,7 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
                 ))}
               </div>
               <div className="artifact-actions">
-                <button type="button" onClick={downloadResultScript}>Tải file kịch bản đã cập nhật</button>
+                <button type="button" onClick={downloadResultScript}>Tải file kết quả kiểm thử</button>
                 <span>File tải về sẽ điền cột Kết quả kiểm tra và Chú thích trong kịch bản Word đã đính kèm.</span>
               </div>
               {resultFileMessage && <p className="form-note">{resultFileMessage}</p>}
