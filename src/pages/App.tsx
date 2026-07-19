@@ -36,6 +36,16 @@ import type { AuditLog, Defect, Evidence, Project, ResultStatus, TestCase, TestR
 
 type Tab = 'overview' | 'rtm' | 'runs' | 'defects' | 'evidence' | 'entry';
 
+interface ResultAttachment {
+  id: string;
+  projectId: string;
+  runId: string;
+  fileName: string;
+  createdAt: string;
+  sizeInBytes: number;
+  dataUrl: string;
+}
+
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Dự án & phạm vi' },
   { id: 'rtm', label: 'Ma trận truy vết' },
@@ -53,6 +63,7 @@ export function App() {
   const [testCaseRows, setTestCaseRows] = useStoredState('uc-platform-test-cases', initialTestCases);
   const [testRunRows, setTestRunRows] = useStoredState('uc-platform-test-runs', normalizeRuns(initialTestRuns, initialUseCases));
   const [resultRows, setResultRows] = useStoredState('uc-platform-test-results', initialTestResults);
+  const [resultFiles, setResultFiles] = useStoredState<ResultAttachment[]>('uc-platform-result-files', []);
   const [defectRows, setDefectRows] = useStoredState('uc-platform-defects', initialDefects);
   const [auditRows, setAuditRows] = useStoredState('uc-platform-audit-logs', initialAuditLogs);
   const [selectedProjectId, setSelectedProjectId] = useStoredState('uc-platform-selected-project', projectRows[0]?.id ?? '');
@@ -140,7 +151,17 @@ export function App() {
           />
         )}
         {activeTab === 'rtm' && <RtmView useCases={scopedUseCases} scenarios={scenarioRows} testCases={scopedTestCases} results={scopedResults} />}
-        {activeTab === 'runs' && <RunsView testCases={scopedTestCases} results={scopedResults} />}
+        {activeTab === 'runs' && (
+          <RunsView
+            project={selectedProject}
+            run={selectedRun}
+            runs={projectRuns}
+            useCases={scopedUseCases}
+            testCases={scopedTestCases}
+            results={scopedResults}
+            resultFiles={resultFiles.filter((file) => file.projectId === selectedProject?.id && (!selectedRun || file.runId === selectedRun.id))}
+          />
+        )}
         {activeTab === 'defects' && <DefectsView defects={scopedDefects} />}
         {activeTab === 'evidence' && <EvidenceView auditLogs={auditRows} />}
         {activeTab === 'entry' && (
@@ -179,6 +200,17 @@ export function App() {
               setResultRows((current) => [row, ...current]);
               addAudit(row.runnerType === 'automation' ? 'CREATE_AUTOMATION_RESULT' : 'CREATE_MANUAL_RESULT', 'test_results', row.id);
             }}
+            onSyncAutomationResults={(rows) => {
+              setResultRows((current) => [
+                ...rows,
+                ...current.filter((row) => !rows.some((incoming) => incoming.testRunId === row.testRunId && incoming.testCaseId === row.testCaseId && row.runnerType === 'automation'))
+              ]);
+              if (selectedRun) addAudit('SYNC_AUTOMATION_RESULTS', 'test_runs', selectedRun.id);
+            }}
+            onSaveResultFile={(file) => {
+              setResultFiles((current) => [file, ...current.filter((item) => item.id !== file.id)]);
+              addAudit('SAVE_RESULT_FILE', 'test_runs', file.runId);
+            }}
             onAddDefect={(row) => {
               setDefectRows((current) => [row, ...current]);
               addAudit('CREATE_DEFECT', 'defects', row.id);
@@ -190,6 +222,7 @@ export function App() {
               setTestCaseRows(initialTestCases);
               setTestRunRows(normalizeRuns(initialTestRuns, initialUseCases));
               setResultRows(initialTestResults);
+              setResultFiles([]);
               setDefectRows(initialDefects);
               setAuditRows(initialAuditLogs);
               setSelectedProjectId(initialProjects[0]?.id ?? '');
@@ -338,37 +371,101 @@ function RtmView({ useCases, scenarios, testCases, results }: { useCases: UseCas
   );
 }
 
-function RunsView({ testCases, results }: { testCases: TestCase[]; results: TestResult[] }) {
+function RunsView({ project, run, runs, useCases, testCases, results, resultFiles }: {
+  project?: Project;
+  run?: TestRun;
+  runs: TestRun[];
+  useCases: UseCase[];
+  testCases: TestCase[];
+  results: TestResult[];
+  resultFiles: ResultAttachment[];
+}) {
+  const passCount = results.filter((result) => result.status === 'Pass').length;
+  const failCount = results.filter((result) => result.status === 'Fail').length;
+  const blockedCount = results.filter((result) => result.status === 'Blocked' || result.status === 'Infrastructure Error').length;
+  const passRate = results.length ? Math.round((passCount / results.length) * 100) : 0;
+
   return (
-    <section className="panel">
-      <div className="panel-heading">
-        <div>
-          <p>Kết quả kiểm thử</p>
-          <h2>Kết quả chi tiết theo đợt đang chọn</h2>
-        </div>
-        <PlayCircle aria-hidden />
+    <div className="stack">
+      <div className="metrics-grid">
+        <MetricCard label="Dự án" value={project?.code ?? '-'} hint={project?.name ?? 'Chưa chọn dự án'} icon={<Briefcase size={22} />} />
+        <MetricCard label="Đợt kiểm thử" value={run?.code ?? '-'} hint={`${runs.length} đợt của dự án`} icon={<PlayCircle size={22} />} />
+        <MetricCard label="Tỷ lệ đạt" value={`${passRate}%`} hint={`${passCount}/${results.length || 0} giao dịch đạt`} icon={<CheckCircle2 size={22} />} />
+        <MetricCard label="File kết quả" value={`${resultFiles.length}`} hint="File kịch bản đã cập nhật" icon={<Archive size={22} />} />
       </div>
-      <DataTable
-        columns={['Giao dịch kiểm thử', 'Trạng thái', 'Cách chạy', 'Kết quả thực tế', 'Commit', 'Số lần chạy lại']}
-        rows={results}
-        renderRow={(result) => {
-          const testCase = testCases.find((item) => item.id === result.testCaseId);
-          return (
-            <tr key={result.id}>
-              <td>
-                <strong>{testCase?.code}</strong>
-                <span>{testCase?.title}</span>
-              </td>
-              <td><Badge tone={statusTone(result.status)}>{resultStatusLabel(result.status)}</Badge></td>
-              <td>{runnerTypeLabel(result.runnerType)}</td>
-              <td>{result.actualResult}</td>
-              <td>{result.commitSha}</td>
-              <td>{result.retryCount}</td>
-            </tr>
-          );
-        }}
-      />
-    </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Tổng quan kết quả</p>
+            <h2>{run ? `Kết quả đợt ${run.code}` : 'Chưa chọn đợt kiểm thử'}</h2>
+          </div>
+          <PlayCircle aria-hidden />
+        </div>
+        <div className="summary-counts result-overview">
+          <span>Tổng UC: <strong>{useCases.length}</strong></span>
+          <span>Tổng giao dịch: <strong>{testCases.length}</strong></span>
+          <span>Đã có kết quả: <strong>{results.length}</strong></span>
+          <span>Đạt: <strong>{passCount}</strong></span>
+          <span>Không đạt: <strong>{failCount}</strong></span>
+          <span>Bị chặn/lỗi: <strong>{blockedCount}</strong></span>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>File kết quả kiểm thử</p>
+            <h2>File kịch bản đã điền kết quả và minh chứng</h2>
+          </div>
+          <Archive aria-hidden />
+        </div>
+        {resultFiles.length ? (
+          <div className="attachment-list">
+            {resultFiles.map((file) => (
+              <div className="attachment-row" key={file.id}>
+                <FileCheck2 size={18} />
+                <span>{file.fileName}<small>{formatBytes(file.sizeInBytes)} - {new Date(file.createdAt).toLocaleString('vi-VN')}</small></span>
+                <a className="download-link" href={file.dataUrl} download={file.fileName}>Tải về</a>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="plain-text">Chưa có file kết quả cho đợt này. Hãy chạy kiểm thử và tải file ở chức năng Nhập liệu kiểm thử.</p>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p>Chi tiết giao dịch</p>
+            <h2>Kết quả kiểm thử theo từng giao dịch của đợt đang chọn</h2>
+          </div>
+          <ListChecks aria-hidden />
+        </div>
+        <DataTable
+          columns={['Giao dịch kiểm thử', 'Trạng thái', 'Cách chạy', 'Kết quả thực tế', 'Commit', 'Số lần chạy lại']}
+          rows={results}
+          emptyText="Đợt kiểm thử này chưa có kết quả. Khi kiểm thử tự động hoàn thành, dữ liệu sẽ được đồng bộ vào đây."
+          renderRow={(result) => {
+            const testCase = testCases.find((item) => item.id === result.testCaseId);
+            return (
+              <tr key={result.id}>
+                <td>
+                  <strong>{testCase?.code}</strong>
+                  <span>{testCase?.title}</span>
+                </td>
+                <td><Badge tone={statusTone(result.status)}>{resultStatusLabel(result.status)}</Badge></td>
+                <td>{runnerTypeLabel(result.runnerType)}</td>
+                <td>{result.actualResult}</td>
+                <td>{result.commitSha}</td>
+                <td>{result.retryCount}</td>
+              </tr>
+            );
+          }}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -464,6 +561,8 @@ interface EntryViewProps {
   onAddTestRun: (row: TestRun) => void;
   onUpdateRunScope: (runId: string, useCaseIds: string[]) => void;
   onAddResult: (row: TestResult) => void;
+  onSyncAutomationResults: (rows: TestResult[]) => void;
+  onSaveResultFile: (file: ResultAttachment) => void;
   onAddDefect: (row: Defect) => void;
   onReset: () => void;
 }
@@ -483,6 +582,7 @@ interface AutomationRunStatus {
 interface AutomationRunSummary {
   testRunId: string;
   generatedAt: string;
+  checksum?: string;
   counts: {
     total: number;
     pass: number;
@@ -515,7 +615,7 @@ interface AttachedScriptFile {
   buffer: ArrayBuffer;
 }
 
-function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onAddDefect, onReset }: EntryViewProps) {
+function EntryView({ selectedProject, selectedRun, projects, useCases, testCases, testRuns, results, onAddProject, onAddUseCase, onAddTestCase, onAddTestRun, onUpdateRunScope, onAddResult, onSyncAutomationResults, onSaveResultFile, onAddDefect, onReset }: EntryViewProps) {
   const [entryMode, setEntryMode] = useState<'manual' | 'automation'>('automation');
   const [projectForm, setProjectForm] = useState({ code: nextCode('PRJ-NEW', projects.length + 1), name: '', ownerUnit: '' });
   const [useCaseForm, setUseCaseForm] = useState({ code: '', title: '', module: 'general' });
@@ -712,6 +812,9 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
         setAutomationPolling(false);
         if (matchingRun.conclusion === 'success' || matchingRun.summary) {
+          if (matchingRun.summary && selectedRun) {
+            onSyncAutomationResults(buildAutomationResultRows(matchingRun.summary, selectedRun.id, testCases));
+          }
           setAutomationStatusMessage('Hoàn thành kiểm thử. Bạn có thể tải file kịch bản đã cập nhật kết quả.');
         } else {
           const reason = matchingRun.conclusion ? automationConclusionReason(matchingRun.conclusion) : 'Không có summary kết quả trong lần chạy.';
@@ -782,17 +885,32 @@ function EntryView({ selectedProject, selectedRun, projects, useCases, testCases
 
     setResultFileMessage('Đang tạo file kịch bản đã cập nhật kết quả...');
     try {
+      if (selectedRun) {
+        onSyncAutomationResults(buildAutomationResultRows(latestSummary, selectedRun.id, testCases));
+      }
       const output = await buildResultDocx(scriptFile.buffer, latestSummary, latestAutomationRun);
       const baseName = scriptFile.name.replace(/\.docx$/i, '');
       const outputBuffer = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
       const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
       const url = URL.createObjectURL(blob);
+      const fileName = `${baseName}_KET_QUA_${latestSummary.testRunId || 'automation'}.docx`;
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${baseName}_KET_QUA_${latestSummary.testRunId || 'automation'}.docx`;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       link.remove();
+      if (selectedProject && selectedRun) {
+        onSaveResultFile({
+          id: `result-file-${selectedRun.id}-${latestSummary.checksum || Date.now()}`,
+          projectId: selectedProject.id,
+          runId: selectedRun.id,
+          fileName,
+          createdAt: new Date().toISOString(),
+          sizeInBytes: output.byteLength,
+          dataUrl: await blobToDataUrl(blob)
+        });
+      }
       URL.revokeObjectURL(url);
       setResultFileMessage('Đã tạo file kịch bản kết quả. Kiểm tra thư mục Downloads của trình duyệt.');
     } catch (error) {
@@ -1379,6 +1497,43 @@ function automationConclusionReason(conclusion: string): string {
     startup_failure: 'Runner không khởi tạo được môi trường kiểm thử.'
   };
   return reasons[conclusion] ?? `GitHub Actions trả về trạng thái ${conclusion}.`;
+}
+
+function buildAutomationResultRows(summary: AutomationRunSummary, runId: string, testCases: TestCase[]): TestResult[] {
+  return (summary.results ?? []).map((item, index) => {
+    const testCase = findTestCaseForAutomationResult(item, testCases);
+    return {
+      id: `auto-${runId}-${testCase?.id ?? (normalizeTransactionCode(item.testCaseCode) || String(index))}-${summary.checksum ?? summary.generatedAt}`,
+      testRunId: runId,
+      testCaseId: testCase?.id ?? '',
+      status: item.status,
+      actualResult: item.status === 'Pass'
+        ? 'Kết quả thực tế phù hợp với kết quả mong đợi.'
+        : item.failureReason || item.errorMessage || 'Kết quả thực tế không đáp ứng kết quả mong đợi.',
+      runnerType: 'automation' as const,
+      commitSha: item.commitSha ?? '',
+      durationMs: item.durationMs ?? 0,
+      executedAt: summary.generatedAt || new Date().toISOString(),
+      retryCount: item.retryCount ?? 0
+    };
+  }).filter((row) => row.testCaseId);
+}
+
+function findTestCaseForAutomationResult(result: AutomationRunResult, testCases: TestCase[]): TestCase | undefined {
+  const resultCode = normalizeTransactionCode(result.testCaseCode);
+  if (resultCode) {
+    return testCases.find((testCase) => normalizeTransactionCode(testCase.code) === resultCode);
+  }
+  return testCases.find((testCase) => testCase.title === result.title);
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('Không đọc được file kết quả.'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function buildResultDocx(sourceBuffer: ArrayBuffer, summary: AutomationRunSummary, run?: AutomationRunStatus): Promise<Uint8Array> {
