@@ -10,6 +10,9 @@ if (!ingestUrl) {
 }
 
 const summary = JSON.parse(readFileSync(summaryPath, 'utf8'));
+const workflowUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+  ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  : '';
 const response = await fetch(ingestUrl, {
   method: 'POST',
   headers: {
@@ -17,11 +20,10 @@ const response = await fetch(ingestUrl, {
     ...(serviceToken ? { authorization: `Bearer ${serviceToken}` } : {})
   },
   body: JSON.stringify({
-    results: summary.results.map((result: Record<string, unknown>) => ({
-      ...result,
-      testRunId: summary.testRunId,
-      actualResult: result.status === 'Pass' ? 'Assertion matched expected result.' : 'See Playwright evidence for details.'
-    }))
+    projectCode: process.env.PROJECT_CODE ?? '',
+    workflowUrl,
+    artifactUrl: workflowUrl,
+    summary: stripImageBodies(summary)
   })
 });
 
@@ -30,3 +32,25 @@ if (!response.ok) {
 }
 
 console.log(await response.text());
+
+function stripImageBodies(summary: Record<string, unknown>) {
+  const results = Array.isArray(summary.results) ? summary.results : [];
+  return {
+    ...summary,
+    results: results.map((result) => {
+      if (!result || typeof result !== 'object') return result;
+      const row = result as Record<string, unknown>;
+      const evidenceImages = Array.isArray(row.evidenceImages)
+        ? row.evidenceImages.map((image) => {
+          if (!image || typeof image !== 'object') return image;
+          const { body: _body, ...metadata } = image as Record<string, unknown>;
+          return metadata;
+        })
+        : [];
+      return {
+        ...row,
+        evidenceImages
+      };
+    })
+  };
+}

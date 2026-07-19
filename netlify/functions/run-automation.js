@@ -97,12 +97,12 @@ function normalizeCodes(value, maxCases) {
 function clampMaxCases(value) {
   const parsed = Number.parseInt(String(value || '10'), 10);
   if (!Number.isFinite(parsed)) return 10;
-  return Math.max(1, Math.min(parsed, 50));
+  return Math.max(1, Math.min(parsed, 500));
 }
 
 function normalizeScenarios(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 100).map((item) => ({
+  return value.slice(0, 500).map((item) => ({
     id: text(item.id),
     useCaseCode: text(item.useCaseCode),
     title: text(item.title),

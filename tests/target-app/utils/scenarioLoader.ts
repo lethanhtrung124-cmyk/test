@@ -67,5 +67,5 @@ function readPayloadScenarios(): TargetScenario[] {
 function clampMaxCases(value: string | undefined): number {
   const parsed = Number.parseInt(value || '10', 10);
   if (!Number.isFinite(parsed)) return 10;
-  return Math.max(1, Math.min(parsed, 50));
+  return Math.max(1, Math.min(parsed, 500));
 }
