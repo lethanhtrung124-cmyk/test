@@ -212,6 +212,12 @@ function calculateCaptcha(left: number, operator: string, right: number) {
 }
 
 async function chooseFunction(page: Page, scenario: TargetScenario) {
+  const explicitMenuPath = scenario.steps.map(parseExplicitMenuPath).find((path) => path.length > 0);
+  if (explicitMenuPath?.length) {
+    await clickMenuPath(page, explicitMenuPath);
+    return;
+  }
+
   const candidates = buildFunctionCandidates(scenario);
   for (const candidate of candidates) {
     const clickable = findActionableText(page, candidate);
@@ -222,7 +228,87 @@ async function chooseFunction(page: Page, scenario: TargetScenario) {
   }
 }
 
+function parseExplicitMenuPath(step: string): string[] {
+  if (!/menu|→|->|>/.test(step)) return [];
+  const afterMenu = step.split(/menu\s*:/i)[1] ?? step;
+  return afterMenu
+    .split(/→|->|>/)
+    .map((item) => cleanInstructionText(item))
+    .filter((item) => item.length >= 2);
+}
+
+function parseExplicitInputAction(step: string): { fieldLabel: string; value: string; pressEnter: boolean } | null {
+  const fieldLabel = extractQuotedText(step).find((item) => /tim|tìm|search|nhap|nhập|ten|tên|ma|mã/i.test(item)) ?? extractQuotedText(step)[0] ?? '';
+  const exampleValue = step.match(/\b(?:VD|Ví dụ|Vi du|Example)\s*:\s*([^)，),.;\n]+)/i)?.[1]?.trim()
+    ?? step.match(/\b(?:nhập|nhap|điền|dien)\s+(.+?)\s+(?:vào|vao)\s+ô/i)?.[1]?.replace(/^["“”']|["“”']$/g, '').trim()
+    ?? '';
+  const pressEnter = /enter|nhấn enter|nhan enter/i.test(step);
+  if (!fieldLabel || !exampleValue) return null;
+  return { fieldLabel, value: cleanInstructionText(exampleValue), pressEnter };
+}
+
+async function clickMenuPath(page: Page, menuPath: string[]) {
+  for (const menuItem of menuPath) {
+    const locator = findActionableText(page, menuItem);
+    if (!(await clickIfUsable(locator))) {
+      throw new Error(`Khong tim thay menu theo kich ban: ${menuItem}`);
+    }
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+  }
+}
+
+async function fillExplicitField(page: Page, fieldLabel: string, value: string) {
+  const field = findFieldByLabel(page, fieldLabel);
+  await expect(field, `Khong tim thay o nhap theo kich ban: ${fieldLabel}`).toBeVisible();
+  await field.fill(value);
+}
+
+function findFieldByLabel(page: Page, label: string): Locator {
+  const exact = new RegExp(escapeRegExp(label), 'i');
+  return page.getByLabel(exact).or(page.getByPlaceholder(exact)).or(
+    page.locator(`xpath=//*[contains(normalize-space(.), "${xpathLiteral(label)}")]//input[not(@type="hidden") and not(@type="password")] | //*[contains(normalize-space(.), "${xpathLiteral(label)}")]//textarea`)
+  ).or(page.locator(`input[aria-label*="${cssEscape(label)}" i], textarea[aria-label*="${cssEscape(label)}" i]`)).first();
+}
+
+function extractQuotedText(value: string): string[] {
+  return [...value.matchAll(/[“"']([^“"']+)[”"']/g)].map((match) => cleanInstructionText(match[1]));
+}
+
+function cleanInstructionText(value: string): string {
+  return value
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^\s*(chon|chọn|menu)\s*[:：-]?\s*/i, '')
+    .replace(/^[\s:：("'“”]+|[\s,.;。:)"'“”]+$/g, '')
+    .trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cssEscape(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function xpathLiteral(value: string): string {
+  return value.replace(/"/g, '\\"');
+}
+
 async function performBusinessAction(page: Page, scenario: TargetScenario, step: string) {
+  const explicitMenuPath = parseExplicitMenuPath(step);
+  if (explicitMenuPath.length) {
+    await clickMenuPath(page, explicitMenuPath);
+    return;
+  }
+
+  const explicitInput = parseExplicitInputAction(step);
+  if (explicitInput) {
+    await fillExplicitField(page, explicitInput.fieldLabel, explicitInput.value);
+    if (explicitInput.pressEnter) await page.keyboard.press('Enter');
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    return;
+  }
+
   const actionText = normalizeVietnamese(`${scenario.title} ${step}`);
 
   if (/ket xuat|excel|tai ve|trich xuat/.test(actionText)) {
