@@ -48,6 +48,7 @@ const results = specs.flatMap((spec) =>
       const latest = attempts[attempts.length - 1];
       const ids = extractIds(spec.title);
       const status = normalizeStatus(latest.status);
+      const actualAttachment = decodeActualResultAttachment(latest);
       return {
         title: spec.title,
         useCaseCode: ids.useCaseCode,
@@ -55,7 +56,9 @@ const results = specs.flatMap((spec) =>
         status,
         durationMs: latest.duration,
         retryCount: latest.retry,
-        failureReason: status === 'Pass' ? '' : extractFailureReason(latest),
+        expectedType: extractActualField(actualAttachment, 'Expected type'),
+        actualEvidence: extractActualField(actualAttachment, 'Actual evidence'),
+        failureReason: status === 'Pass' ? '' : extractFailureReason(latest, actualAttachment),
         errorMessage: status === 'Pass' ? '' : sanitizeErrorMessage(latest.error?.message ?? latest.error?.value ?? ''),
         evidencePaths: extractEvidencePaths(latest),
         evidenceImages: extractEvidenceImages(latest),
@@ -108,8 +111,7 @@ function extractIds(title: string) {
   };
 }
 
-function extractFailureReason(result: PlaywrightResult): string {
-  const actualResult = decodeActualResultAttachment(result);
+function extractFailureReason(result: PlaywrightResult, actualResult = decodeActualResultAttachment(result)): string {
   const attachedReason = actualResult.match(/Failure reason:\s*(.+)/i)?.[1]?.trim();
   if (attachedReason) return attachedReason;
 
@@ -140,6 +142,12 @@ function extractFailureReason(result: PlaywrightResult): string {
   }
 
   return '';
+}
+
+function extractActualField(actualResult: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = actualResult.match(new RegExp(`${escaped}:\\s*(.+)`, 'i'));
+  return match?.[1]?.trim() ?? '';
 }
 
 function decodeActualResultAttachment(result: PlaywrightResult): string {

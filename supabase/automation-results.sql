@@ -22,6 +22,8 @@ create table if not exists public.automation_result_rows (
   retry_count integer not null default 0,
   failure_reason text,
   error_message text,
+  expected_type text,
+  actual_evidence text,
   commit_sha text,
   workflow_url text,
   evidence jsonb not null default '{}'::jsonb,
@@ -34,6 +36,10 @@ create index if not exists automation_result_rows_test_run_id_idx
 
 create index if not exists automation_result_rows_status_idx
   on public.automation_result_rows(test_run_id, status);
+
+alter table public.automation_result_rows
+  add column if not exists expected_type text,
+  add column if not exists actual_evidence text;
 
 alter table public.automation_run_summaries enable row level security;
 alter table public.automation_result_rows enable row level security;

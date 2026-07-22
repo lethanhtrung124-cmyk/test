@@ -1,6 +1,15 @@
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import type { TargetScenario } from './scenarioLoader';
 
+type ExpectedType = 'search_result' | 'detail_view' | 'download' | 'save_success' | 'delete_success' | 'send_success' | 'validation_message' | 'permission' | 'generic';
+
+interface Evaluation {
+  matched: boolean;
+  expectedType: ExpectedType;
+  failureReason: string;
+  actualEvidence: string;
+}
+
 const vietnameseSearchWords = [
   'tìm kiếm',
   'tra cứu',
@@ -26,21 +35,25 @@ export async function runTargetScenario(page: Page, scenario: TargetScenario, te
     }
 
     const actualResult = await readVisibleText(page);
-    const matched = evaluateExpectedResult(actualResult, scenario.expectedResult, scenario.precondition);
-    const failureReason = matched ? '' : explainBusinessMismatch(actualResult, scenario);
-    await attachActualResult(testInfo, scenario, matched, evidenceNotes, actualResult, failureReason);
-    await attachConclusionScreenshot(page, testInfo, scenario, matched ? 'pass' : 'fail');
+    const evaluation = await evaluateScenarioOutcome(page, actualResult, scenario);
+    await attachActualResult(testInfo, scenario, evaluation, evidenceNotes, actualResult);
+    await attachConclusionScreenshot(page, testInfo, scenario, evaluation.matched ? 'pass' : 'fail');
     actualResultAttached = true;
 
     expect(
-      matched,
-      `Ket qua thuc te phai phu hop cot mong doi: ${scenario.expectedResult}\nNguyen nhan: ${failureReason}`
+      evaluation.matched,
+      `Ket qua thuc te phai phu hop cot mong doi: ${scenario.expectedResult}\nLoai ky vong: ${evaluation.expectedType}\nNguyen nhan: ${evaluation.failureReason}`
     ).toBeTruthy();
   } catch (error) {
     if (!actualResultAttached) {
       const actualResult = await readVisibleText(page);
       const failureReason = explainExecutionFailure(error, actualResult);
-      await attachActualResult(testInfo, scenario, false, evidenceNotes, actualResult, failureReason);
+      await attachActualResult(testInfo, scenario, {
+        matched: false,
+        expectedType: classifyExpectedType(scenario),
+        failureReason,
+        actualEvidence: summarizeActualEvidence(actualResult)
+      }, evidenceNotes, actualResult);
       await attachConclusionScreenshot(page, testInfo, scenario, 'error');
     }
     throw error;
@@ -56,10 +69,9 @@ async function attachConclusionScreenshot(page: Page, testInfo: TestInfo, scenar
 async function attachActualResult(
   testInfo: TestInfo,
   scenario: TargetScenario,
-  matched: boolean,
+  evaluation: Evaluation,
   evidenceNotes: string[],
-  actualResult: string,
-  failureReason: string
+  actualResult: string
 ) {
   await testInfo.attach(`${scenario.id}-actual-result.txt`, {
     body: [
@@ -67,8 +79,10 @@ async function attachActualResult(
       `Title: ${scenario.title}`,
       `Expected: ${scenario.expectedResult}`,
       `Precondition: ${scenario.precondition}`,
-      `Evaluation: ${matched ? 'Pass' : 'Fail'}`,
-      failureReason ? `Failure reason: ${failureReason}` : '',
+      `Expected type: ${evaluation.expectedType}`,
+      `Evaluation: ${evaluation.matched ? 'Pass' : 'Fail'}`,
+      evaluation.failureReason ? `Failure reason: ${evaluation.failureReason}` : '',
+      `Actual evidence: ${evaluation.actualEvidence}`,
       '',
       'Execution notes:',
       ...evidenceNotes,
@@ -297,6 +311,140 @@ function evaluateExpectedResult(actualText: string, expectedResult: string, prec
   if (expectedTokens.length === 0) return normalizedActual.length > 0;
   const matchedTokens = expectedTokens.filter((token) => normalizedActual.includes(token));
   return matchedTokens.length >= Math.max(1, Math.ceil(expectedTokens.length * 0.45));
+}
+
+async function evaluateScenarioOutcome(page: Page, actualText: string, scenario: TargetScenario): Promise<Evaluation> {
+  const expectedType = classifyExpectedType(scenario);
+  const actual = normalizeVietnamese(actualText);
+  const expected = normalizeVietnamese(scenario.expectedResult);
+
+  const blockingReason = detectBlockingState(actual, expected);
+  if (blockingReason) {
+    return fail(expectedType, blockingReason, actualText);
+  }
+
+  switch (expectedType) {
+    case 'search_result':
+      return (await hasResultList(page, actual))
+        ? pass(expectedType, 'He thong hien thi danh sach/ket qua sau khi tra cuu.')
+        : fail(expectedType, 'Khong ghi nhan duoc bang, danh sach hoac ket qua theo dieu kien tra cuu.', actualText);
+    case 'detail_view':
+      return hasDetailView(actual)
+        ? pass(expectedType, 'He thong da mo giao dien/noi dung chi tiet.')
+        : fail(expectedType, 'Khong mo duoc man hinh chi tiet hoac noi dung chi tiet cua ban ghi.', actualText);
+    case 'download':
+      return hasDownloadEvidence(actual)
+        ? pass(expectedType, 'He thong co dau hieu ket xuat/tai file thanh cong.')
+        : fail(expectedType, 'Khong ghi nhan duoc file tai xuong hoac thong bao ket xuat thanh cong.', actualText);
+    case 'save_success':
+      return hasSuccessEvidence(actual)
+        ? pass(expectedType, 'He thong hien thi thong bao/trang thai luu hoac cap nhat thanh cong.')
+        : fail(expectedType, 'Khong ghi nhan thong bao thanh cong sau thao tac luu/cap nhat.', actualText);
+    case 'delete_success':
+      return hasDeleteEvidence(actual)
+        ? pass(expectedType, 'He thong ghi nhan thao tac xoa/huy thanh cong.')
+        : fail(expectedType, 'Khong ghi nhan thong bao hoac trang thai xoa/huy thanh cong.', actualText);
+    case 'send_success':
+      return hasSuccessEvidence(actual) || /da gui|gui thanh cong|tiep nhan|ghi log/.test(actual)
+        ? pass(expectedType, 'He thong ghi nhan thao tac gui/tiep nhan du lieu.')
+        : fail(expectedType, 'Khong ghi nhan thong bao gui/tiep nhan du lieu thanh cong.', actualText);
+    case 'validation_message':
+      return hasValidationEvidence(actual, expected)
+        ? pass(expectedType, 'He thong hien thi canh bao/kiem tra tinh hop le phu hop.')
+        : fail(expectedType, 'Khong ghi nhan canh bao hoac thong bao kiem tra tinh hop le phu hop.', actualText);
+    case 'permission':
+      return hasPermissionEvidence(actual)
+        ? pass(expectedType, 'Tai khoan co dau hieu da duoc phan quyen hoac he thong hien thi dung thong bao phan quyen.')
+        : fail(expectedType, 'Khong xac dinh duoc trang thai phan quyen cua tai khoan kiem thu.', actualText);
+    case 'generic':
+    default: {
+      const matched = evaluateExpectedResult(actualText, scenario.expectedResult, '');
+      return matched
+        ? pass(expectedType, 'Ket qua thuc te khop noi dung mong doi theo tu khoa bat buoc.')
+        : fail(expectedType, explainBusinessMismatch(actualText, scenario), actualText);
+    }
+  }
+}
+
+function classifyExpectedType(scenario: TargetScenario): ExpectedType {
+  const text = normalizeVietnamese(`${scenario.title} ${scenario.expectedResult} ${scenario.steps.join(' ')}`);
+  const expectedOnly = normalizeVietnamese(`${scenario.title} ${scenario.expectedResult}`);
+  if (/phan quyen|khong co quyen|duoc cap quyen|tu choi truy cap/.test(expectedOnly)) return 'permission';
+  if (/ket xuat|xuat excel|excel|tai file|tai ve|tep tin|download|trich xuat/.test(text)) return 'download';
+  if (/chi tiet|xem noi dung|xem chi tiet|toan bo noi dung/.test(text)) return 'detail_view';
+  if (/xoa|huy/.test(text)) return 'delete_success';
+  if (/gui|tiep nhan|truyen nhan|ghi log/.test(text)) return 'send_success';
+  if (/canh bao|khong hop le|kiem tra tinh hop le|validate|rang buoc|trung ma/.test(text)) return 'validation_message';
+  if (/luu|cap nhat|ghi nhan|thanh cong|nhap khau/.test(text)) return 'save_success';
+  if (/tra cuu|tim kiem|truy van|hien thi ket qua|danh sach|ban ghi tuong ung/.test(text)) return 'search_result';
+  return 'generic';
+}
+
+function pass(expectedType: ExpectedType, actualEvidence: string): Evaluation {
+  return { matched: true, expectedType, failureReason: '', actualEvidence };
+}
+
+function fail(expectedType: ExpectedType, failureReason: string, actualText: string): Evaluation {
+  return { matched: false, expectedType, failureReason, actualEvidence: summarizeActualEvidence(actualText) };
+}
+
+function detectBlockingState(actual: string, expected: string): string {
+  if (/dang nhap|login/.test(actual)) return 'He thong van o man hinh dang nhap hoac phien dang nhap chua hoan tat.';
+  if (/khong co quyen|khong duoc phep|unauthorized|forbidden|access denied/.test(actual) && !/khong co quyen|khong duoc phep|tu choi/.test(expected)) {
+    return 'Tai khoan kiem thu khong co quyen vao chuc nang theo kich ban.';
+  }
+  if (isDashboard(actual) && !containsExpectedOutcome(actual, expected)) {
+    return 'Runner da dang nhap nhung dang dung o trang tong quan/dashboard, chua mo dung chuc nang nghiep vu theo kich ban.';
+  }
+  if (/loi he thong|exception|stack trace|internal server error|server error|404|500/.test(actual)) {
+    return 'He thong dich hien thi loi ky thuat trong qua trinh thuc hien giao dich.';
+  }
+  return '';
+}
+
+async function hasResultList(page: Page, actual: string): Promise<boolean> {
+  if (/khong co du lieu|khong tim thay|no data|no results/.test(actual)) return false;
+  if (/tong so|ket qua|danh sach|ban ghi|tim thay|hien thi/.test(actual) && !isDashboard(actual)) return true;
+  const rowCount = await page.locator('table tbody tr, [role="row"], .ant-table-row, .MuiDataGrid-row').count().catch(() => 0);
+  return rowCount > 0;
+}
+
+function hasDetailView(actual: string): boolean {
+  return /chi tiet|thong tin chi tiet|noi dung chi tiet|ma ho so|ngay cap|trang thai|thong tin chung/.test(actual)
+    && !/khong co du lieu|khong tim thay/.test(actual)
+    && !isDashboard(actual);
+}
+
+function hasDownloadEvidence(actual: string): boolean {
+  return /tai xuong|tai ve|download|ket xuat thanh cong|xuat excel thanh cong|da tao file|tep tin|file excel|xlsx|xls/.test(actual);
+}
+
+function hasSuccessEvidence(actual: string): boolean {
+  return /thanh cong|da luu|luu thanh cong|cap nhat thanh cong|ghi nhan|hoan tat|da cap nhat|da nhap khau/.test(actual);
+}
+
+function hasDeleteEvidence(actual: string): boolean {
+  return /xoa thanh cong|da xoa|huy thanh cong|da huy|khong con ban ghi|thanh cong/.test(actual);
+}
+
+function hasValidationEvidence(actual: string, expected: string): boolean {
+  if (/canh bao|khong hop le|bat buoc|trung|vuot qua|khong duoc|kiem tra/.test(actual)) return true;
+  return importantTokens(expected).some((token) => actual.includes(token));
+}
+
+function hasPermissionEvidence(actual: string): boolean {
+  if (/khong co quyen|khong duoc phep|unauthorized|forbidden|access denied/.test(actual)) return true;
+  return !/dang nhap|login/.test(actual) && actual.length > 0;
+}
+
+function summarizeActualEvidence(actualText: string): string {
+  const actual = actualText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(' | ');
+  return actual || 'Khong doc duoc noi dung hien thi tren man hinh.';
 }
 
 function importantTokens(value: string): string[] {

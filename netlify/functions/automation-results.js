@@ -34,6 +34,8 @@ exports.handler = async (event) => {
     retryCount: Number(row.retry_count) || 0,
     failureReason: row.failure_reason || '',
     errorMessage: row.error_message || '',
+    expectedType: row.expected_type || '',
+    actualEvidence: row.actual_evidence || '',
     commitSha: row.commit_sha || '',
     evidencePaths: row.evidence?.paths || [],
     evidenceImages: row.evidence?.images || []

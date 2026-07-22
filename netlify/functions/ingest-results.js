@@ -79,6 +79,8 @@ async function insertResultRows(testRunId, generatedAt, workflowUrl, results) {
       retry_count: Number(result.retryCount) || 0,
       failure_reason: text(result.failureReason),
       error_message: text(result.errorMessage),
+      expected_type: text(result.expectedType),
+      actual_evidence: text(result.actualEvidence),
       commit_sha: text(result.commitSha || process.env.GITHUB_SHA),
       workflow_url: workflowUrl,
       generated_at: generatedAt,

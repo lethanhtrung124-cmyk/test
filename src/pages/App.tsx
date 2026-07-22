@@ -606,6 +606,8 @@ interface AutomationRunResult {
   commitSha?: string;
   evidencePaths?: string[];
   evidenceImages?: Array<{ name: string; contentType: string; body: string; omittedReason?: string }>;
+  expectedType?: string;
+  actualEvidence?: string;
 }
 
 interface AttachedScriptFile {
@@ -1622,6 +1624,21 @@ function automationConclusionReason(conclusion: string): string {
   return reasons[conclusion] ?? `GitHub Actions trả về trạng thái ${conclusion}.`;
 }
 
+function automationExpectedTypeLabel(value: string): string {
+  const labels: Record<string, string> = {
+    search_result: 'Tra cứu/hiển thị danh sách',
+    detail_view: 'Xem chi tiết',
+    download: 'Kết xuất/tải file',
+    save_success: 'Lưu/cập nhật thành công',
+    delete_success: 'Xóa/hủy thành công',
+    send_success: 'Gửi/tiếp nhận dữ liệu',
+    validation_message: 'Cảnh báo/kiểm tra hợp lệ',
+    permission: 'Phân quyền',
+    generic: 'Đối chiếu nội dung chung'
+  };
+  return labels[value] ?? value;
+}
+
 function buildAutomationResultRows(summary: AutomationRunSummary, runId: string, testCases: TestCase[]): TestResult[] {
   return (summary.results ?? []).map((item, index) => {
     const testCase = findTestCaseForAutomationResult(item, testCases);
@@ -1822,6 +1839,8 @@ function buildEvidenceNote(result: AutomationRunResult | undefined, run: Automat
 
   const lines = [
     result.status === 'Pass' ? 'Kết quả thực tế phù hợp với kết quả mong đợi.' : `Nguyên nhân: ${result.failureReason || result.errorMessage || 'Kết quả thực tế không đáp ứng kết quả mong đợi.'}`,
+    result.expectedType ? `Loại kỳ vọng: ${automationExpectedTypeLabel(result.expectedType)}` : '',
+    result.actualEvidence ? `Bằng chứng thực tế: ${result.actualEvidence}` : '',
     `Thời điểm chạy: ${summary.generatedAt ? new Date(summary.generatedAt).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN')}`,
     `Thời gian xử lý: ${result.durationMs} ms`
   ];
