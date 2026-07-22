@@ -1796,12 +1796,15 @@ function fillWordCell(doc: XMLDocument, cell: Element, value: string, imageRelat
 }
 
 function createImageParagraph(doc: XMLDocument, relationshipId: string): Element {
+  const imageWidth = 2600000;
+  const imageHeight = 1462500;
   const drawingXml = `
     <w:p xmlns:w="${wordNamespace}" xmlns:r="${relationshipNamespace}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+      <w:pPr><w:jc w:val="center"/></w:pPr>
       <w:r>
         <w:drawing>
           <wp:inline distT="0" distB="0" distL="0" distR="0">
-            <wp:extent cx="3200000" cy="1900000"/>
+            <wp:extent cx="${imageWidth}" cy="${imageHeight}"/>
             <wp:effectExtent l="0" t="0" r="0" b="0"/>
             <wp:docPr id="${Math.floor(Math.random() * 100000) + 1}" name="Minh chứng kiểm thử"/>
             <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
@@ -1810,7 +1813,7 @@ function createImageParagraph(doc: XMLDocument, relationshipId: string): Element
                 <pic:pic>
                   <pic:nvPicPr><pic:cNvPr id="0" name="Minh chứng kiểm thử"/><pic:cNvPicPr/></pic:nvPicPr>
                   <pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
-                  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3200000" cy="1900000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+                  <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${imageWidth}" cy="${imageHeight}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
                 </pic:pic>
               </a:graphicData>
             </a:graphic>
@@ -1834,32 +1837,18 @@ function documentResultLabel(status: ResultStatus): string {
   return resultStatusLabel(status);
 }
 
-function buildEvidenceNote(result: AutomationRunResult | undefined, run: AutomationRunStatus | undefined, summary: AutomationRunSummary): string {
+function buildEvidenceNote(result: AutomationRunResult | undefined, _run: AutomationRunStatus | undefined, _summary: AutomationRunSummary): string {
   if (!result) return 'Chưa có kết quả kiểm thử tự động tương ứng trong lần chạy mới nhất.';
 
-  const lines = [
-    result.status === 'Pass' ? 'Kết quả thực tế phù hợp với kết quả mong đợi.' : `Nguyên nhân: ${result.failureReason || result.errorMessage || 'Kết quả thực tế không đáp ứng kết quả mong đợi.'}`,
-    result.expectedType ? `Loại kỳ vọng: ${automationExpectedTypeLabel(result.expectedType)}` : '',
-    result.actualEvidence ? `Bằng chứng thực tế: ${result.actualEvidence}` : '',
-    `Thời điểm chạy: ${summary.generatedAt ? new Date(summary.generatedAt).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN')}`,
-    `Thời gian xử lý: ${result.durationMs} ms`
-  ];
-
-  const evidencePaths = result.evidencePaths?.filter(Boolean) ?? [];
-  const embeddedImage = result.evidenceImages?.find((image) => image.body);
-  const omittedImage = result.evidenceImages?.find((image) => image.omittedReason);
-  if (embeddedImage && result.evidenceImages) {
-    lines.push(`Hình ảnh chứng minh: đã nhúng ảnh ${embeddedImage.name || 'minh chứng'} vào ô này.`);
-  } else if (omittedImage) {
-    lines.push(`Hình ảnh chứng minh: ${omittedImage.name || 'minh chứng'} quá lớn nên chưa nhúng trực tiếp vào file Word. Vui lòng mở artifact minh chứng để xem ảnh gốc.`);
-  } else if (evidencePaths.length) {
-    lines.push(`Hình ảnh chứng minh: ${evidencePaths.join('; ')}`);
-  } else if (run?.artifacts?.length) {
-    lines.push(`Hình ảnh chứng minh: ${run.artifacts.map((artifact) => artifact.name).join('; ')}`);
+  const hasMinimalEvidenceImage = result.evidenceImages?.some((image) => image.body || image.omittedReason) || result.evidencePaths?.some(Boolean);
+  if (result.status === 'Pass') {
+    return hasMinimalEvidenceImage
+      ? 'Ảnh minh chứng kết quả đạt:'
+      : 'Đạt. Chưa có ảnh minh chứng trong dữ liệu kết quả.';
   }
 
-  if (run?.url) lines.push(`Workflow minh chứng: ${run.url}`);
-  return lines.join('\n');
+  const minimalReason = result.failureReason || result.errorMessage || 'Kết quả thực tế không đáp ứng kết quả mong đợi.';
+  return `Nguyên nhân không đạt: ${minimalReason}\n${hasMinimalEvidenceImage ? 'Ảnh minh chứng kết quả không đạt:' : 'Chưa có ảnh minh chứng trong dữ liệu kết quả.'}`;
 }
 
 function formatBytes(value: number): string {
