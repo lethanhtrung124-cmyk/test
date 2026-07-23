@@ -249,12 +249,108 @@ function parseExplicitInputAction(step: string): { fieldLabel: string; value: st
 
 async function clickMenuPath(page: Page, menuPath: string[]) {
   for (const menuItem of menuPath) {
-    const locator = findActionableText(page, menuItem);
-    if (!(await clickIfUsable(locator))) {
+    if (!(await clickMenuItem(page, menuItem))) {
+      await expandKnownParentMenus(page, menuItem);
+    }
+    if (!(await clickMenuItem(page, menuItem))) {
       throw new Error(`Khong tim thay menu theo kich ban: ${menuItem}`);
     }
     await page.waitForLoadState('networkidle').catch(() => undefined);
   }
+}
+
+async function clickMenuItem(page: Page, menuItem: string): Promise<boolean> {
+  const candidates = unique([menuItem, ...menuAliasesFor(menuItem)]);
+  for (const candidate of candidates) {
+    if (await clickIfUsable(findActionableText(page, candidate))) return true;
+  }
+  for (const candidate of candidates) {
+    if (await clickFuzzyActionableText(page, candidate)) return true;
+  }
+  return false;
+}
+
+function menuAliasesFor(menuItem: string): string[] {
+  const normalized = normalizeVietnamese(menuItem);
+  const aliases: string[] = [];
+
+  if (normalized.includes('linh vuc kiem toan')) {
+    aliases.push('Doanh nghiệp kế toán - kiểm toán', 'Kế toán viên - Kiểm toán viên');
+  }
+
+  if (normalized.includes('doanh nghiep') || normalized.includes('dnkt')) {
+    aliases.push('Doanh nghiệp kế toán - kiểm toán', 'DNKT');
+  }
+
+  if (normalized.includes('loi ich cong chung') || normalized.includes('chung khoan') || normalized.includes('licc')) {
+    aliases.push(
+      'Kiểm toán cho đơn vị có lợi ích công chúng lĩnh vực chứng khoán',
+      'Lợi ích công chúng lĩnh vực chứng khoán',
+      'LICC lĩnh vực chứng khoán',
+      'Chứng khoán',
+      'Đơn vị có lợi ích công chúng'
+    );
+  }
+
+  if (normalized.includes('danh sach') || normalized.includes('chap thuan')) {
+    aliases.push(
+      'Danh sách DNKT được chấp thuận - LICC lĩnh vực chứng khoán',
+      'Danh sách DNKT được chấp thuận',
+      'DNKT được chấp thuận',
+      'Được chấp thuận'
+    );
+  }
+
+  return aliases;
+}
+
+async function expandKnownParentMenus(page: Page, menuItem: string) {
+  const normalized = normalizeVietnamese(menuItem);
+  const likelyParents = normalized.includes('loi ich cong chung') || normalized.includes('chung khoan') || normalized.includes('dnkt')
+    ? ['Doanh nghiệp kế toán - kiểm toán', 'Kế toán viên - Kiểm toán viên']
+    : [];
+
+  for (const parent of likelyParents) {
+    if (await clickMenuItem(page, parent)) {
+      await page.waitForTimeout(400);
+    }
+  }
+}
+
+async function clickFuzzyActionableText(page: Page, targetText: string): Promise<boolean> {
+  const target = normalizeVietnamese(targetText);
+  const targetTokens = importantTokens(targetText);
+  if (target.length < 3 || targetTokens.length === 0) return false;
+
+  const locator = page.locator('button, a, [role="button"], [role="link"], [role="menuitem"], [tabindex]:not([tabindex="-1"]), li, .cursor-pointer');
+  const count = Math.min(await locator.count().catch(() => 0), 120);
+  let bestIndex = -1;
+  let bestScore = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    const item = locator.nth(index);
+    if (!(await item.isVisible().catch(() => false))) continue;
+    const text = await item.innerText({ timeout: 500 }).catch(() => '');
+    const normalizedText = normalizeVietnamese(text);
+    const score = menuMatchScore(normalizedText, target, targetTokens);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  }
+
+  if (bestIndex < 0 || bestScore < 0.55) return false;
+  await locator.nth(bestIndex).click({ timeout: 5000 });
+  return true;
+}
+
+function menuMatchScore(actual: string, target: string, targetTokens: string[]): number {
+  if (actual.includes(target) || target.includes(actual)) return 1;
+  const matchedTokens = targetTokens.filter((token) => actual.includes(token));
+  const tokenScore = matchedTokens.length / targetTokens.length;
+  const decisiveTokens = ['dnkt', 'chap', 'thuan', 'licc', 'loi', 'ich', 'cong', 'chung', 'khoan'];
+  const decisiveMatches = decisiveTokens.filter((token) => target.includes(token) && actual.includes(token)).length;
+  return tokenScore + Math.min(0.35, decisiveMatches * 0.08);
 }
 
 async function fillExplicitField(page: Page, fieldLabel: string, value: string) {
@@ -387,6 +483,7 @@ function findActionableText(page: Page, text: string | RegExp): Locator {
 async function clickIfUsable(locator: Locator) {
   if (!(await locator.count())) return false;
   if (!(await locator.isVisible().catch(() => false))) return false;
+  await locator.hover({ timeout: 2000 }).catch(() => undefined);
   await locator.click({ timeout: 5000 });
   return true;
 }
