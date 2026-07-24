@@ -226,10 +226,15 @@ async function chooseFunction(page: Page, scenario: TargetScenario) {
       return;
     }
   }
+
+  throw new Error(`Khong chon duoc chuc nang nghiep vu theo kich ban. Da thu cac tu khoa: ${candidates.slice(0, 8).join(', ') || 'khong co tu khoa phu hop'}`);
 }
 
 function parseExplicitMenuPath(step: string): string[] {
   if (!/menu|→|->|>/.test(step)) return [];
+  const quotedItems = extractQuotedText(step).filter((item) => !/tìm kiếm|tim kiem|search/i.test(item));
+  if (quotedItems.length >= 2) return quotedItems;
+
   const afterMenu = step.split(/menu\s*:/i)[1] ?? step;
   return afterMenu
     .split(/→|->|>/)
@@ -408,11 +413,13 @@ async function performBusinessAction(page: Page, scenario: TargetScenario, step:
   const actionText = normalizeVietnamese(`${scenario.title} ${step}`);
 
   if (/ket xuat|excel|tai ve|trich xuat/.test(actionText)) {
+    await ensureSearchResultsAvailable(page, scenario);
     await clickFirstAvailable(page, [/kết xuất/i, /xuất excel/i, /excel/i, /tải/i, /download/i]);
     return;
   }
 
   if (/chi tiet|xem noi dung|xem chi tiet/.test(actionText)) {
+    await ensureSearchResultsAvailable(page, scenario);
     await clickFirstAvailable(page, [/chi tiết/i, /xem/i, /view/i]);
     return;
   }
@@ -437,20 +444,35 @@ async function fillSearchCriteria(page: Page, scenario: TargetScenario) {
   }
 }
 
-async function clickFirstAvailable(page: Page, patterns: RegExp[]) {
+async function ensureSearchResultsAvailable(page: Page, scenario: TargetScenario) {
+  const actual = normalizeVietnamese(await readVisibleText(page));
+  const rows = await page.locator('table tbody tr, [role="row"], .ant-table-row, .MuiDataGrid-row').count().catch(() => 0);
+  if (rows > 0 && !/khong co du lieu|khong tim thay|no data|no results/.test(actual)) return;
+
+  await fillSearchCriteria(page, scenario);
+  const searchClicked = await clickFirstAvailable(page, [/tìm kiếm/i, /tra cứu/i, /search/i]);
+  if (!searchClicked) {
+    await page.keyboard.press('Enter').catch(() => undefined);
+  }
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await page.waitForTimeout(500);
+}
+
+async function clickFirstAvailable(page: Page, patterns: RegExp[]): Promise<boolean> {
   for (const pattern of patterns) {
     const button = page.getByRole('button', { name: pattern }).first();
     if (await clickIfUsable(button)) {
       await page.waitForLoadState('networkidle').catch(() => undefined);
-      return;
+      return true;
     }
 
     const actionableText = findActionableText(page, pattern);
     if (await clickIfUsable(actionableText)) {
       await page.waitForLoadState('networkidle').catch(() => undefined);
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 function buildFunctionCandidates(scenario: TargetScenario): string[] {
@@ -671,6 +693,10 @@ function explainExecutionFailure(error: unknown, actualText: string): string {
   const normalizedMessage = normalizeVietnamese(message);
   const normalizedActual = normalizeVietnamese(actualText);
 
+  if (normalizedMessage.includes('khong tim thay menu theo kich ban') || normalizedMessage.includes('khong chon duoc chuc nang nghiep vu')) {
+    return 'Runner da dang nhap nhung khong mo duoc menu/chuc nang nghiep vu theo dung buoc trong kich ban.';
+  }
+
   if (normalizedMessage.includes('highcharts') || normalizedMessage.includes('outside of the viewport') || normalizedMessage.includes('intercepts pointer events')) {
     return 'Runner click nham chu/nhan trong bieu do Highcharts thay vi nut chuc nang, nen buoc thao tac bi loi ky thuat.';
   }
@@ -707,6 +733,11 @@ function normalizeVietnamese(value: string): string {
 }
 
 function extractSearchText(value: string): string {
+  const normalized = normalizeVietnamese(value);
+  if (normalized.includes('doanh nghiep') || normalized.includes('dnkt') || normalized.includes('chung khoan')) {
+    return 'KPMG';
+  }
+
   return (
     value
       .replace(/^Kiểm tra\s+/i, '')

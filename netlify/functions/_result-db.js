@@ -1,4 +1,4 @@
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseUrl = normalizeSupabaseUrl(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
 function isConfigured() {
@@ -10,7 +10,7 @@ async function supabaseRequest(path, options = {}) {
     throw new Error('Supabase service database is not configured.');
   }
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+  const response = await fetch(`${supabaseUrl}/rest/v1/${path.replace(/^\/+/, '')}`, {
     ...options,
     headers: {
       apikey: supabaseServiceKey,
@@ -28,6 +28,13 @@ async function supabaseRequest(path, options = {}) {
   if (response.status === 204) return null;
   const text = await response.text();
   return text ? JSON.parse(text) : null;
+}
+
+function normalizeSupabaseUrl(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/rest\/v1$/i, '');
 }
 
 function json(statusCode, body) {
